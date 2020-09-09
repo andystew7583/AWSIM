@@ -18,7 +18,7 @@
 #endif
 
 // Must match number of input parameters defined via "setParam" below
-#define NPARAMS 83
+#define NPARAMS 84
 
 // Avoids memory errors associated with usual definition of bool
 typedef int mybool;
@@ -4514,6 +4514,8 @@ void printUsage()
      "  tol                 L_infinity accuracy with which to converge surface\n"
      "                      iterative solution for surface pressure.\n"
      "                      Must be > 0. Default is 10^-8 m^2/s^2.\n"
+     "  omega_MG            Weighting parameter for Multigrid Jacobi iteration.\n"
+     "                      Default is 2/3.\n"
      "  maxiters            Maxmimum allowable iterations in any given pressure\n"
      "                      solve. Must be > 0. Default is 10,000.\n"
      "  SOR_rp_max          Upper bound of search range to use when optimizing\n"
@@ -4848,6 +4850,7 @@ int main (int argc, char ** argv)
   setParam(params,paramcntr++,"use_MG","%d",&use_MG,true);
   setParam(params,paramcntr++,"use_fullMG","%d",&use_fullMG,true);
   setParam(params,paramcntr++,"tol",FLT_FMT,&pi_tol,true);
+  setParam(params,paramcntr++,"omega_MG",FLT_FMT,&omega_WJ,true);
   setParam(params,paramcntr++,"maxiters","%u",&maxiters,true);
   setParam(params,paramcntr++,"SOR_rp_max",FLT_FMT,&rp_opt_max,true);
   setParam(params,paramcntr++,"SOR_rp_min",FLT_FMT,&rp_opt_min,true);
