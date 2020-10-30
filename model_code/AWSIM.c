@@ -18,7 +18,7 @@
 #endif
 
 // Must match number of input parameters defined via "setParam" below
-#define NPARAMS 84
+#define NPARAMS 86
 
 // Avoids memory errors associated with usual definition of bool
 typedef int mybool;
@@ -184,8 +184,10 @@ real useA2 = false;                     // Laplacian viscosity flag
 real useA4 = false;                     // Biharmonic viscosity flag
 real K2 = 0.0;                          // Laplacian tracer diffusion coefficient
 real K4 = 0.0;                          // Biharmonic tracer diffusion coefficient
-real ** taux = NULL;                    // x-component of wind stress
-real ** tauy = NULL;                    // y-component of wind stress
+real *** taux = NULL;                    // x-component of wind stress
+real *** tauy = NULL;                    // y-component of wind stress
+real tauPeriod = 0;                     // Period over which wind forcing is applied
+uint tauNrecs = 1;                      // Number of temporal records supplied in wind forcing files
 mybool useWind = false;                 // Will be set true if wind stress is input
 mybool useRelax = false;                // Will be set true if a relaxation time scale file is specified
 mybool useWDia = false;                 // Will be set true if diabatic velocity is active
@@ -1941,6 +1943,14 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
   real vv_p, vv_m, dv_p, dv_m;
   real bb_p, bb_m, db_p, db_m;
   
+  // Used for wind stress interpolation
+  real taux_interp, tauy_interp;
+  real nflt;
+  int nm1, np1;
+  
+  
+  
+  
   
   // Construct matrices pointing to 'data' input vector
   pdata = (real *) data;
@@ -2702,8 +2712,38 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         jp2 = j + Ng + 2;
         jm2 = j + Ng - 2;
         
+        
+        
+        ///////////////////////////////
+        /// Interpolate wind stress ///
+        ///////////////////////////////
+        
+        // Interpolate user-supplied wind stress in time
+        if (useWind)
+        {
+          if ((tauNrecs==1) || (tauPeriod<=0))
+          {
+            taux_interp = taux[0][i][j];
+            tauy_interp = tauy[0][i][j];
+          }
+          else
+          {
+            nflt = (fmod(t,tauPeriod)/tauPeriod) * tauNrecs; // Floating point "index" in time
+            nm1 = (int) floor(nflt); // Indices of adjacent wind stress time points
+            np1 = ((int) ceil(nflt)) % tauNrecs;
+            if (np1 == nm1)
+            {
+              np1 = (nm1 + 1) % tauNrecs; // Catch cases in which nflt is an exact integer
+            }
+            // Interpolate linearly
+            taux_interp = (np1-nflt)*taux[nm1][i][j] + (nflt-nm1)*taux[np1][i][j];
+            tauy_interp = (np1-nflt)*tauy[nm1][i][j] + (nflt-nm1)*tauy[np1][i][j];
+          }
+        }
 
-
+        
+        
+        
         //////////////////////////
         /// Thickness tendency ///
         //////////////////////////
@@ -2859,7 +2899,8 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         // Add wind stress
         if (useWind)
         {
-          rhs_u = taux[i][j] * hFsurf_west[k][i0][j0];
+          // Compute tendency
+          rhs_u = taux_interp * hFsurf_west[k][i0][j0];
           dt_uu_w[k][i][j] += rhs_u / h_west[k][i0][j0];
           if (dt_avg_hu > 0)
           {
@@ -3064,7 +3105,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         // Add wind stress
         if (useWind)
         {
-          rhs_v = tauy[i][j] * hFsurf_south[k][i0][j0];
+          rhs_v = tauy_interp * hFsurf_south[k][i0][j0];
           dt_vv_w[k][i][j] += rhs_v / h_south[k][i0][j0];
           if (dt_avg_hv > 0)
           {
@@ -4446,10 +4487,15 @@ void printUsage()
      "                      g'=9.81 everywhere. \n"
      "  tauxFile            String file name containing x-component of surface wind.\n"
      "                      stress normalized by density.\n"
-     "                      Size: Nx x Ny. Default: taux=0 everywhere.\n"
+     "                      Size: Nx x Ny x tauNrecs. Default: taux=0 everywhere.\n"
      "  tauyFile            String file name containing y-component of surface wind.\n"
      "                      stress normalized by density.\n"
-     "                      Size: Nx x Ny. Default: tauy=0 everywhere.\n"
+     "                      Size: Nx x Ny x tauNrecs. Default: tauy=0 everywhere.\n"
+     "  tauPeriod           Period over which the imposed wind stress varies.\n"
+     "                      If <=0 then only the first records in tauxFile and tauyFile\n"
+     "                      will be used, i.e. wind stress is steady. Default is 0.\n"
+     "  tauNrecs            Number of temporal records supplied in tauxFile and tauyFile.\n"
+     "                      Default is 1. Must be > 0.\n"
      "  wDiaFile            String file name containing fixed component of diabatic\n"
      "                      velocity across layer interfaces. Note that velocities will.\n"
      "                      be modified if thickness and/or interface restoring is\n"
@@ -4828,6 +4874,8 @@ int main (int argc, char ** argv)
   setParam(params,paramcntr++,"gFile","%s",gFile,true);
   setParam(params,paramcntr++,"tauxFile","%s",tauxFile,true);
   setParam(params,paramcntr++,"tauyFile","%s",tauyFile,true);
+  setParam(params,paramcntr++,"tauPeriod",FLT_FMT,&tauPeriod,true);
+  setParam(params,paramcntr++,"tauNrecs","%u$",&tauNrecs,true);
   setParam(params,paramcntr++,"wDiaFile","%s",wDiaFile,true);
   setParam(params,paramcntr++,"linDragCoeff",FLT_FMT,&rDrag,true);
   setParam(params,paramcntr++,"quadDragCoeff",FLT_FMT,&CdBot,true);
@@ -4908,7 +4956,7 @@ int main (int argc, char ** argv)
       (rDrag < 0.0) || (rSurf < 0.0) || (CdBot < 0.0) || (CdSurf < 0.0) ||
       (pi_tol <= 0) || (rp_opt_max > 2.0) || (rp_opt_min < 0.0) ||
       (rp_opt_min >= rp_opt_max) || (rp_acc_max <= 0) || (rp_opt_freq <= 0) ||
-      (maxiters <= 0))
+      (maxiters <= 0) || (tauNrecs <= 0))
   {
     fprintf(stderr,"ERROR: Invalid input parameter values\n");
     printUsage();
@@ -5130,8 +5178,8 @@ int main (int argc, char ** argv)
   VECALLOC(gg,Nlay);
   VECALLOC(geff,Nlay);
   VECALLOC(Z,Nlay);
-  MATALLOC(taux,Nx,Ny);
-  MATALLOC(tauy,Nx,Ny);
+  MATALLOC3(taux,tauNrecs,Nx,Ny);
+  MATALLOC3(tauy,tauNrecs,Nx,Ny);
   MATALLOC(uLid,Nx,Ny);
   MATALLOC(vLid,Nx,Ny);
   MATALLOC(uLid_g,Nx+2*Ng,Ny+2*Ng);
@@ -5652,8 +5700,8 @@ int main (int argc, char ** argv)
        ( (strlen(OmegayFile) > 0)      &&  !readMatrix(OmegayFile,Omega_y,Nx,Ny,stderr) ) ||
        ( (strlen(OmegazFile) > 0)      &&  !readMatrix(OmegazFile,Omega_z,Nx+1,Ny+1,stderr) ) ||
        ( (strlen(gFile) > 0)           &&  !readVector(gFile,gg,Nlay,stderr) ) ||
-       ( (strlen(tauxFile) > 0)        &&  !readMatrix(tauxFile,taux,Nx,Ny,stderr) ) ||
-       ( (strlen(tauyFile) > 0)        &&  !readMatrix(tauyFile,tauy,Nx,Ny,stderr) ) ||
+       ( (strlen(tauxFile) > 0)        &&  !readMatrix3(tauxFile,taux,tauNrecs,Nx,Ny,stderr) ) ||
+       ( (strlen(tauyFile) > 0)        &&  !readMatrix3(tauyFile,tauy,tauNrecs,Nx,Ny,stderr) ) ||
        ( (strlen(wDiaFile) > 0)        &&  !readMatrix3(wDiaFile,wdia_ff,Nlay+1,Nx,Ny,stderr) ) ||
        ( (strlen(uLidFile) > 0)        &&  !readMatrix(uLidFile,uLid,Nx,Ny,stderr) ) ||
        ( (strlen(vLidFile) > 0)        &&  !readMatrix(vLidFile,vLid,Nx,Ny,stderr) ) ||
