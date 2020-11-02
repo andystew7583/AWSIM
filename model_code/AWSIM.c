@@ -2730,14 +2730,14 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             nflt = (fmod(t,tauPeriod)/tauPeriod) * tauNrecs; // Floating point "index" in time
             nm1 = (int) floor(nflt); // Indices of adjacent wind stress time points
-            np1 = ((int) ceil(nflt)) % tauNrecs;
+            np1 = (int) ceil(nflt);            
             if (np1 == nm1)
             {
-              np1 = (nm1 + 1) % tauNrecs; // Catch cases in which nflt is an exact integer
+              np1 = (nm1 + 1); // Catch cases in which nflt is an exact integer
             }
             // Interpolate linearly
-            taux_interp = (np1-nflt)*taux[nm1][i][j] + (nflt-nm1)*taux[np1][i][j];
-            tauy_interp = (np1-nflt)*tauy[nm1][i][j] + (nflt-nm1)*tauy[np1][i][j];
+            taux_interp = (np1-nflt)*taux[nm1][i][j] + (nflt-nm1)*taux[np1%tauNrecs][i][j];
+            tauy_interp = (np1-nflt)*tauy[nm1][i][j] + (nflt-nm1)*tauy[np1%tauNrecs][i][j];
           }
         }
 
