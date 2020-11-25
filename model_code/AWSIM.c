@@ -2264,7 +2264,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         {
           // Account for fixed fluxes (will be zero if no fixed flux is specified)
           // N.B. This code also does linear interpolation in time when wdia_ff varies in time
-          wdia[Nlay][i][j] = (np1-nflt)*wdia_ff[nm1][k][i][j] + (nflt-nm1)*wdia_ff[np1%wDiaNrecs][k][i][j];
+          wdia[k][i][j] = (np1-nflt)*wdia_ff[nm1][k][i][j] + (nflt-nm1)*wdia_ff[np1%wDiaNrecs][k][i][j];
           
           // Account for thickness relaxation
           if (useRelax && (hTime[i][j] > 0))
