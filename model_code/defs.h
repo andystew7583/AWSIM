@@ -60,6 +60,14 @@
 #define POW9(x)  ((x)*(x)*(x)*(x)*(x)*(x)*(x)*(x)*(x))
 #define POW10(x) ((x)*(x)*(x)*(x)*(x)*(x)*(x)*(x)*(x)*(x))
 
+#define MATALLOC4(mat4,Nx,Ny,Nz,Nt)                                \
+    mat4 = matalloc4(Nx,Ny,Nz,Nt);                                 \
+    if (mat4 == NULL)                                           \
+    {                                                           \
+      fprintf(stderr,"ERROR: Unable to allocate memory\r\n");   \
+      return 0;                                                 \
+    }
+
 #define MATALLOC3(mat3,Nx,Ny,Nz)                                \
     mat3 = matalloc3(Nx,Ny,Nz);                                 \
     if (mat3 == NULL)                                           \
@@ -165,6 +173,7 @@ static const char OUTN_HU_AVG[] = "HU_avg";
 static const char OUTN_HV_AVG[] = "HV_avg";
 static const char OUTN_HUU_AVG[] = "HUU_avg";
 static const char OUTN_HVV_AVG[] = "HVV_avg";
+static const char OUTN_HUV_AVG[] = "HUV_avg";
 
 // U-momentum equation output filenames
 static const char OUTN_UMOM_Q[] = "UMom_PVadvection";
@@ -225,11 +234,14 @@ bool readParams (char * infname, paramdata * params, uint nparams, FILE * errstr
 // Data I/O
 void printMatrix (FILE * outfile, real ** mat, uint m, uint n);
 void printVector (FILE * outfile, real * vec, uint m);
+bool readMatrix4 (char * fname, real **** mat4, uint Nr, uint Nc, uint Ns, uint Nt, FILE * errstrm);
 bool readMatrix3 (char * fname, real *** mat3, uint Nr, uint Nc, uint Ns, FILE * errstrm);
 bool readMatrix (char * fname, real ** mat, uint m, uint n, FILE * errstrm);
 bool readVector (char * fname, real * vec, uint len, FILE * errstrm);
 
 // Wrappers for allocating/freeing arrays
+real **** matalloc4 (uint m1, uint m2, uint m3, uint m4);
+void matfree4 (real **** mat);
 real *** matalloc3 (uint m1, uint m2, uint m3);
 void matfree3 (real *** mat);
 real ** matalloc (uint m, uint n);

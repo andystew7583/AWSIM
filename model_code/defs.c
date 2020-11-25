@@ -310,6 +310,175 @@ bool readMatrix3 (char * fname, real *** mat3, uint Nr, uint Nc, uint Ns, FILE *
 
 
 /**
+ * readMatrix4
+ *
+ * Reads 'Nr'x'Nc'x'Ns'x'Nt' real values into the matrix 'mat4' in column-major
+ * order (i.e. reads mat[1][1][1], mat[2][1][1], mat[3][1][1], ... , mat[1][2][1],
+ * ... for compatibility with MatLab) from the file specified by
+ * 'fname'. Any error will result in 'false' being returned, and an
+ * error message being printed to the specified FILE/stream 'errstrm'.
+ *
+ */
+bool readMatrix4 (char * fname, real **** mat4, uint Nr, uint Nc, uint Ns, uint Nt, FILE * errstrm)
+{
+  FILE * pfile = NULL;
+  int i = 0;
+  int j = 0;
+  int k = 0;
+  int l = 0;
+  bool readok = true;
+  
+  // Basic error checking
+  if (fname == NULL)
+  {
+    if (errstrm != NULL)
+    {
+      fprintf(errstrm,"ERROR: NULL file name supplied to 'readMatrix4'\r\n");
+    }
+    return false;
+  }
+  if (mat4 == NULL)
+  {
+    if (errstrm != NULL)
+    {
+      fprintf(errstrm,"ERROR: NULL matrix supplied to 'readMatrix4'\r\n");
+    }
+    return false;
+  }
+  for (i = 0; i < Nr; i ++)
+  {
+    if (mat4[i] == NULL)
+    {
+      if (errstrm != NULL)
+      {
+        fprintf(errstrm,"ERROR: NULL matrix supplied to 'readMatrix4'\r\n");
+      }
+      return false;
+    }
+    for (j = 0; j < Nc; j ++)
+    {
+      if (mat4[i][j] == NULL)
+      {
+        if (errstrm != NULL)
+        {
+          fprintf(errstrm,"ERROR: NULL vector supplied to 'readMatrix4'\r\n");
+        }
+        return false;
+      }
+      for (k = 0; k < Ns; k ++)
+      {
+        if (mat4[i][j][k] == NULL)
+        {
+          if (errstrm != NULL)
+          {
+            fprintf(errstrm,"ERROR: NULL vector supplied to 'readMatrix4'\r\n");
+          }
+          return false;
+        }
+      }
+    }
+  }
+  
+  // Attempt to open the file
+  pfile = fopen(fname,"r");
+  
+  // Check that the file exists
+  if (pfile == NULL)
+  {
+    if (errstrm != NULL)
+    {
+      fprintf(errstrm,"ERROR: Could not open %s\r\n",fname);
+    }
+    return false;
+  }
+  
+  // Read data from the file
+  for (l = 0; l < Nt; l ++)
+  {
+    for (k = 0; k < Ns; k ++)
+    {
+      for (j = 0; j < Nc; j ++)
+      {
+        for (i = 0; i < Nr; i ++)
+        {
+          if (fread(&mat4[i][j][k][l],sizeof(real),1,pfile) < 1)
+          {
+            if (errstrm != NULL)
+            {
+              fprintf(errstrm,"ERROR: Could only read %d of %u values from %s\r\n",l*Nr*Nc*Ns+k*Nr*Nc+j*Nr+i,Nr*Nc*Ns*Nt,fname);
+            }
+            readok = false;
+            break;
+          }
+        }
+      }
+    }
+  }
+  
+  // Close the file and exit
+  fclose(pfile);
+  return readok;
+}
+
+
+/**
+ *  matalloc4
+ *
+ *  Convenience method to allocate a real matrix with dimensions
+ *  (Nr,Nc,Ns,Nt). Returns a pointer to an array of pointers that point
+ *  to an array of pointers that point to an array of pointers that point
+ *  to the beginning of each row in the matrix.
+ *
+ */
+real **** matalloc4 (uint Nr, uint Nc, uint Ns, uint Nt)
+{
+  real * trans = malloc(Nr*Nc*Ns*Nt*sizeof(real));
+  real ** slices = malloc(Nr*Nc*Ns*sizeof(real *));
+  real *** cols = malloc(Nr*Nc*sizeof(real **));
+  real **** rows = malloc(Nr*sizeof(real ***));
+  
+  uint i, j, k;
+  
+  if ((trans == NULL) || (slices == NULL) || (cols == NULL) || (rows == NULL))
+  {
+    return NULL;
+  }
+  
+  memset(slices,0,Nr*Nc*Ns*Nt*sizeof(real));
+  
+  for (i = 0; i < Nr; i ++)
+  {
+    rows[i] = cols + Nc*i;
+    for (j = 0; j < Nc; j ++)
+    {
+      cols[i*Nc+j] = slices + Ns*j + Nc*Ns*i;
+      for (k = 0; k < Ns; k ++)
+      {
+        slices[i*Nc*Ns+j*Ns+k] = trans + Nt*k + Ns*Nt*j + Nc*Ns*Nt*i;
+      }
+    }
+  }
+  
+  return rows;
+}
+
+
+/**
+ *  matfree4
+ *
+ *  Frees memory used by a matrix allocated with matalloc3.
+ *
+ */
+void matfree4 (real **** mat4)
+{
+  free(*(*(*mat4)));
+  free(*(*mat4));
+  free(*mat4);
+  free(mat4);
+}
+
+
+/**
  *  matalloc3
  *
  *  Convenience method to allocate a real matrix with dimensions

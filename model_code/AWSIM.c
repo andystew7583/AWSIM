@@ -18,7 +18,7 @@
 #endif
 
 // Must match number of input parameters defined via "setParam" below
-#define NPARAMS 86
+#define NPARAMS 88
 
 // Avoids memory errors associated with usual definition of bool
 typedef int mybool;
@@ -137,10 +137,12 @@ real *** eTime = NULL;
 real *** bTime = NULL;
 
 // Diabatic velocity
+real wDiaPeriod = 0;                     // Period over which diabatic velocity is applied
+uint wDiaNrecs = 1;                      // Number of temporal records supplied in diabatic velocity files
 real *** wdia = NULL;
 real *** wdia_u = NULL;
 real *** wdia_v = NULL;
-real *** wdia_ff = NULL;
+real **** wdia_ff = NULL;
 
 // Grid size - number of grid boxes in the domain
 uint Nx = 0;       // Number of interior gridpoints in the x-direction
@@ -2216,9 +2218,28 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
   //////////////////////////////////
   ///// DIABATIC VELOCITY CODE /////
   //////////////////////////////////
-  
+
   if (useWDia)
   {
+    
+    // Set up indices for linear interpolation (in time) of diapycnal velocities
+    if ((wDiaNrecs==1) || (wDiaPeriod<=0))
+    {
+      nflt = 0;
+      np1 = 1;
+      nm1 = 0;
+    }
+    else
+    {
+      nflt = (fmod(t,wDiaPeriod)/wDiaPeriod) * wDiaNrecs; // Floating point "index" in time
+      nm1 = (int) floor(nflt); // Indices of adjacent wind stress time points
+      np1 = (int) ceil(nflt);
+      if (np1 == nm1)
+      {
+        np1 = (nm1 + 1); // Catch cases in which nflt is an exact integer
+      }
+    }
+    
     // Calculate diapycnal velocities at  centers of cell upper faces
     for (i = 0; i < Nx; i ++)
     {
@@ -2231,7 +2252,8 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         j0 = j + Ng;
 
         // Initialize velocity at sea floor
-        wdia[Nlay][i][j] = wdia_ff[Nlay][i][j];
+        // N.B. This code also does linear interpolation in time when wdia_ff varies in time
+        wdia[Nlay][i][j] = (np1-nflt)*wdia_ff[nm1][Nlay][i][j] + (nflt-nm1)*wdia_ff[np1%wDiaNrecs][Nlay][i][j];
         
         // Keeps track of diabatic velocity due to thickness relaxation,
         // which must be calculated cumulatively
@@ -2241,7 +2263,8 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         for (k = Nlay-1; k >= 0; k --)
         {
           // Account for fixed fluxes (will be zero if no fixed flux is specified)
-          wdia[k][i][j] = wdia_ff[k][i][j];
+          // N.B. This code also does linear interpolation in time when wdia_ff varies in time
+          wdia[Nlay][i][j] = (np1-nflt)*wdia_ff[nm1][k][i][j] + (nflt-nm1)*wdia_ff[np1%wDiaNrecs][k][i][j];
           
           // Account for thickness relaxation
           if (useRelax && (hTime[i][j] > 0))
@@ -3672,6 +3695,11 @@ void constructOutputName (char * outdir, int varid, int k, uint n, char * outfil
       strcat(outfile,OUTN_HVV_AVG);
       break;
     }
+    case VARID_HUV_AVG:
+    {
+      strcat(outfile,OUTN_HUV_AVG);
+      break;
+    }
      
     // U-momentum output
     case VARID_UMOM_Q:
@@ -3841,7 +3869,7 @@ void constructOutputName (char * outdir, int varid, int k, uint n, char * outfil
       
     default:
     {
-      fprintf(stderr,"ERROR: Unknown variable ID specified in constructOutputName\n");
+      fprintf(stderr,"ERROR: Unknown variable ID (%d) specified in constructOutputName\n",varid);
       break;
     }
   }
@@ -4500,6 +4528,11 @@ void printUsage()
      "                      velocity across layer interfaces. Note that velocities will.\n"
      "                      be modified if thickness and/or interface restoring is\n"
      "                      applied. Size: Nx x Ny x Nlay+1. Default: 0 everywhere.\n"
+     "  wDiaPeriod          Period over which the imposed diapycnal velocity varies.\n"
+     "                      If <=0 then only the first record in wDiaFilen"
+     "                      will be used, i.e. diapycnal velocity is steady. Default is 0.\n"
+     "  wDiaNrecs           Number of temporal records supplied in wDiaFile.\n"
+     "                      Default is 1. Must be > 0.\n"
      "  linDragCoeff        Linear bottom drag coefficient (m/s). Must be >= 0.\n"
      "                      Optional - default is 0.0.\n"
      "  quadDragCoeff       Quadratic bottom drag coefficient (dimensionless).\n"
@@ -4877,6 +4910,8 @@ int main (int argc, char ** argv)
   setParam(params,paramcntr++,"tauPeriod",FLT_FMT,&tauPeriod,true);
   setParam(params,paramcntr++,"tauNrecs","%u$",&tauNrecs,true);
   setParam(params,paramcntr++,"wDiaFile","%s",wDiaFile,true);
+  setParam(params,paramcntr++,"wDiaPeriod",FLT_FMT,&wDiaPeriod,true);
+  setParam(params,paramcntr++,"wDiaNrecs","%u$",&wDiaNrecs,true);
   setParam(params,paramcntr++,"linDragCoeff",FLT_FMT,&rDrag,true);
   setParam(params,paramcntr++,"quadDragCoeff",FLT_FMT,&CdBot,true);
   setParam(params,paramcntr++,"linDragSurf",FLT_FMT,&rSurf,true);
@@ -4956,7 +4991,7 @@ int main (int argc, char ** argv)
       (rDrag < 0.0) || (rSurf < 0.0) || (CdBot < 0.0) || (CdSurf < 0.0) ||
       (pi_tol <= 0) || (rp_opt_max > 2.0) || (rp_opt_min < 0.0) ||
       (rp_opt_min >= rp_opt_max) || (rp_acc_max <= 0) || (rp_opt_freq <= 0) ||
-      (maxiters <= 0) || (tauNrecs <= 0))
+      (maxiters <= 0) || (tauNrecs <= 0) || (wDiaNrecs <= 0))
   {
     fprintf(stderr,"ERROR: Invalid input parameter values\n");
     printUsage();
@@ -5459,7 +5494,7 @@ int main (int argc, char ** argv)
     MATALLOC3(wdia,Nlay+1,Nx,Ny);
     MATALLOC3(wdia_u,Nlay+1,Nx,Ny);
     MATALLOC3(wdia_v,Nlay+1,Nx,Ny);
-    MATALLOC3(wdia_ff,Nlay+1,Nx,Ny);
+    MATALLOC4(wdia_ff,wDiaNrecs,Nlay+1,Nx,Ny);
   }
   
   // For MultiGrid solver
@@ -5604,19 +5639,22 @@ int main (int argc, char ** argv)
   // Default fixed diabatic velocities
   if (useWDia)
   {
-    for (k = 0; k < Nlay+1; k ++)
+    for (m = 0; m < wDiaNrecs; m ++)
     {
+      for (k = 0; k < Nlay+1; k ++)
+      {
       
 #pragma parallel
       
-      for (i = 0; i < Nx; i ++)
-      {
-        for (j = 0; j < Ny; j ++)
+        for (i = 0; i < Nx; i ++)
         {
-          wdia_ff[k][i][j] = 0;
+          for (j = 0; j < Ny; j ++)
+          {
+            wdia_ff[m][k][i][j] = 0;
+          }
         }
+        
       }
-      
     }
   }
   
@@ -5702,7 +5740,7 @@ int main (int argc, char ** argv)
        ( (strlen(gFile) > 0)           &&  !readVector(gFile,gg,Nlay,stderr) ) ||
        ( (strlen(tauxFile) > 0)        &&  !readMatrix3(tauxFile,taux,tauNrecs,Nx,Ny,stderr) ) ||
        ( (strlen(tauyFile) > 0)        &&  !readMatrix3(tauyFile,tauy,tauNrecs,Nx,Ny,stderr) ) ||
-       ( (strlen(wDiaFile) > 0)        &&  !readMatrix3(wDiaFile,wdia_ff,Nlay+1,Nx,Ny,stderr) ) ||
+       ( (strlen(wDiaFile) > 0)        &&  !readMatrix4(wDiaFile,wdia_ff,wDiaNrecs,Nlay+1,Nx,Ny,stderr) ) ||
        ( (strlen(uLidFile) > 0)        &&  !readMatrix(uLidFile,uLid,Nx,Ny,stderr) ) ||
        ( (strlen(vLidFile) > 0)        &&  !readMatrix(vLidFile,vLid,Nx,Ny,stderr) ) ||
        ( (strlen(uRelaxFile) > 0)      &&  !readMatrix3(uRelaxFile,uRelax,Nlay,Nx,Ny,stderr) ) ||
