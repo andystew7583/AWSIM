@@ -444,7 +444,7 @@ real **** matalloc4 (uint Nr, uint Nc, uint Ns, uint Nt)
     return NULL;
   }
   
-  memset(slices,0,Nr*Nc*Ns*Nt*sizeof(real));
+  memset(trans,0,Nr*Nc*Ns*Nt*sizeof(real));
   
   for (i = 0; i < Nr; i ++)
   {
