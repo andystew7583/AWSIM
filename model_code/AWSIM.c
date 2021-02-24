@@ -6910,7 +6910,7 @@ int main (int argc, char ** argv)
     {
       
       // Fraction of time step to add to current average
-      avg_fac = (t < t_next_avg) ? 1 : (t-t_next_avg)/dt;
+      avg_fac = (t < t_next_avg) ? 1 : 1-(t-t_next_avg)/dt;
       
       // Need layer thicknesses on cell faces to calculate products
       for (k = 0; k < Nlay; k ++)
