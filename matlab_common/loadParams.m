@@ -196,7 +196,16 @@ hhs = readDataFile(params_file,dirpath,'hsFile',Nx,Ny,0*ones(Nx,Ny));
 gg = readDataFile(params_file,dirpath,'gFile',Nlay,1,9.81*ones(Nlay,1)); 
 
 %%% Load wind stress
-taux = readDataFile(params_file,dirpath,'tauxFile',Nx,Ny,zeros(Nx,Ny)); 
-tauy = readDataFile(params_file,dirpath,'tauyFile',Nx,Ny,zeros(Nx,Ny)); 
+
+[tauPeriod tauPeriod_found] = readparam(params_file,'tauPeriod','%lf');
+if (~tauPeriod_found)
+  tauPeriod = 0;
+end
+[tauNrecs tauNrecs_found] = readparam(params_file,'tauNrecs','%lf');
+if (~tauNrecs_found)
+  tauNrecs = 1;
+end
+taux = readDataFile3D(params_file,dirpath,'tauxFile',tauNrecs,Nx,Ny,zeros(tauNrecs,Nx,Ny)); 
+tauy = readDataFile3D(params_file,dirpath,'tauyFile',tauNrecs,Nx,Ny,zeros(tauNrecs,Nx,Ny)); 
 uLid = readDataFile(params_file,dirpath,'uLidFile',Nx,Ny,zeros(Nx,Ny)); 
 vLid = readDataFile(params_file,dirpath,'vLidFile',Nx,Ny,zeros(Nx,Ny)); 
