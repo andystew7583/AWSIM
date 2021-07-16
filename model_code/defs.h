@@ -134,6 +134,7 @@
 #define VARID_UMOM_RELAX 42
 #define VARID_UMOM_WDIA 43
 #define VARID_UMOM_RAND 44
+#define VARID_UMOM_FBARO 45
 
 #define VARID_VMOM_Q 50
 #define VARID_VMOM_GRADM 51
@@ -150,6 +151,7 @@
 #define VARID_VMOM_RELAX 62
 #define VARID_VMOM_WDIA 63
 #define VARID_VMOM_RAND 64
+#define VARID_VMOM_FBARO 65
 
 #define VARID_THIC_ADV 70
 #define VARID_THIC_RELAX 71
@@ -191,6 +193,7 @@ static const char OUTN_UMOM_BUOY[] = "UMom_buoyForce";
 static const char OUTN_UMOM_RELAX[] = "UMom_relaxation";
 static const char OUTN_UMOM_WDIA[] = "UMom_diapycnal";
 static const char OUTN_UMOM_RAND[] = "UMom_randomForcing";
+static const char OUTN_UMOM_FBARO[] = "UMom_baroForcing";
 
 // V-momentum equation output filenames
 static const char OUTN_VMOM_Q[] = "VMom_PVadvection";
@@ -208,6 +211,7 @@ static const char OUTN_VMOM_BUOY[] = "VMom_buoyForce";
 static const char OUTN_VMOM_RELAX[] = "VMom_relaxation";
 static const char OUTN_VMOM_WDIA[] = "VMom_diapycnal";
 static const char OUTN_VMOM_RAND[] = "VMom_randomForcing";
+static const char OUTN_VMOM_FBARO[] = "VMom_baroForcing";
 
 // Thickness equation output filenames
 static const char OUTN_THIC_ADV[] = "Thic_advection";

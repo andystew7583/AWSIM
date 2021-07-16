@@ -18,7 +18,7 @@
 #endif
 
 // Must match number of input parameters defined via "setParam" below
-#define NPARAMS 88
+#define NPARAMS 90
 
 // Avoids memory errors associated with usual definition of bool
 typedef int mybool;
@@ -186,8 +186,8 @@ real useA2 = false;                     // Laplacian viscosity flag
 real useA4 = false;                     // Biharmonic viscosity flag
 real K2 = 0.0;                          // Laplacian tracer diffusion coefficient
 real K4 = 0.0;                          // Biharmonic tracer diffusion coefficient
-real *** taux = NULL;                    // x-component of wind stress
-real *** tauy = NULL;                    // y-component of wind stress
+real *** taux = NULL;                   // x-component of wind stress
+real *** tauy = NULL;                   // y-component of wind stress
 real tauPeriod = 0;                     // Period over which wind forcing is applied
 uint tauNrecs = 1;                      // Number of temporal records supplied in wind forcing files
 mybool useWind = false;                 // Will be set true if wind stress is input
@@ -197,10 +197,13 @@ real rDrag = 0;                         // Linear bottom drag coefficient
 real CdBot = 0;                         // Quadratic bottom drag coefficient
 real rSurf = 0;                         // Linear surface drag coefficient
 real CdSurf = 0;                        // Quadratic surface drag coefficient
-real ** uLid = 0;                       // u-velocity of rigid lid - used in the calculation of surface drag
-real ** vLid = 0;                       // v-velocity of rigid lid - used in the calculation of surface drag
-real ** uLid_g = 0;                     // u-velocity of rigid lid including ghost points
-real ** vLid_g = 0;                     // v-velocity of rigid lid including ghost points
+real ** uLid = NULL;                    // u-velocity of rigid lid - used in the calculation of surface drag
+real ** vLid = NULL;                    // v-velocity of rigid lid - used in the calculation of surface drag
+real ** uLid_g = NULL;                  // u-velocity of rigid lid including ghost points
+real ** vLid_g = NULL;                  // v-velocity of rigid lid including ghost points
+real ** Fbaro_x = NULL;                 // x-component of imposed barotropic forcing
+real ** Fbaro_y = NULL;                 // y-component of imposed barotropic forcing
+mybool useFbaro = false;                // Will be set true if barotropic forcing is input
 
 // Pressure solve parameters
 mybool use_MG = false;                  // Set true to use MultiGrid rather than SOR
@@ -281,6 +284,7 @@ real *** hu_tend_buoy = NULL;
 real *** hu_tend_relax = NULL;
 real *** hu_tend_wdia = NULL;
 real *** hu_tend_rand = NULL;
+real *** hu_tend_Fbaro = NULL;
 
 // Parameters for averaging v-momentum equation
 real avg_fac_hv = 1;       // Fraction of time step used for averaging
@@ -304,6 +308,7 @@ real *** hv_tend_buoy = NULL;
 real *** hv_tend_relax = NULL;
 real *** hv_tend_wdia = NULL;
 real *** hv_tend_rand = NULL;
+real *** hv_tend_Fbaro = NULL;
 
 // Parameters for averaging h-equation
 real avg_fac_h = 1;        // Fraction of time step used for averaging
@@ -2931,6 +2936,18 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
         }
         
+        // Add barotropic forcing
+        if (useFbaro)
+        {
+          // Compute tendency
+          rhs_u = Fbaro_x[i][j] * hFsurf_west[k][i0][j0];
+          dt_uu_w[k][i][j] += rhs_u / h_west[k][i0][j0];
+          if (dt_avg_hu > 0)
+          {
+            hu_tend_Fbaro[k][i][j] += avg_fac_hu*rhs_u*dt;
+          }
+        }
+        
         // Add linear bottom drag
         if (rDrag > 0)
         {
@@ -2938,7 +2955,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           dt_uu_w[k][i][j] += rhs_u / h_west[k][i0][j0];
           if (dt_avg_hu > 0)
           {
-            hu_tend_wind[k][i][j] += avg_fac_hu*rhs_u*dt;
+            hu_tend_rDrag[k][i][j] += avg_fac_hu*rhs_u*dt;
           }
         }
         
@@ -2971,7 +2988,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           dt_uu_w[k][i][j] += rhs_u / h_west[k][i0][j0];
           if (dt_avg_hu > 0)
           {
-            hu_tend_CdBot[k][i][j] += avg_fac_hu*rhs_u*dt;
+            hu_tend_CdSurf[k][i][j] += avg_fac_hu*rhs_u*dt;
           }
         }
         
@@ -3133,6 +3150,17 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (dt_avg_hv > 0)
           {
             hv_tend_wind[k][i][j] += avg_fac_hv*rhs_v*dt;
+          }
+        }
+        
+        // Add barotropic forcing
+        if (useFbaro)
+        {
+          rhs_v = Fbaro_y[i][j] * hFsurf_south[k][i0][j0];
+          dt_vv_w[k][i][j] += rhs_v / h_south[k][i0][j0];
+          if (dt_avg_hv > 0)
+          {
+            hv_tend_Fbaro[k][i][j] += avg_fac_hv*rhs_v*dt;
           }
         }
         
@@ -3777,6 +3805,11 @@ void constructOutputName (char * outdir, int varid, int k, uint n, char * outfil
       strcat(outfile,OUTN_UMOM_RAND);
       break;
     }
+    case VARID_UMOM_FBARO:
+    {
+      strcat(outfile,OUTN_UMOM_FBARO);
+      break;
+    }
       
     // V-momentum output
     case VARID_VMOM_Q:
@@ -3852,6 +3885,11 @@ void constructOutputName (char * outdir, int varid, int k, uint n, char * outfil
     case VARID_VMOM_RAND:
     {
       strcat(outfile,OUTN_VMOM_RAND);
+      break;
+    }
+    case VARID_VMOM_FBARO:
+    {
+      strcat(outfile,OUTN_VMOM_FBARO);
       break;
     }
       
@@ -4103,6 +4141,7 @@ mybool writeUMomentumAverages (uint n, char * outdir)
         hu_tend_relax[k][i][j] /= avg_len_hu;
         hu_tend_wdia[k][i][j] /= avg_len_hu;
         hu_tend_rand[k][i][j] /= avg_len_hu;
+        hu_tend_Fbaro[k][i][j] /= avg_len_hu;
       }
     }
   }
@@ -4140,6 +4179,8 @@ mybool writeUMomentumAverages (uint n, char * outdir)
     if (!writeOutputFile(outfile,hu_tend_wdia[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_UMOM_RAND,k,n,outfile);
     if (!writeOutputFile(outfile,hu_tend_rand[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_UMOM_FBARO,k,n,outfile);
+    if (!writeOutputFile(outfile,hu_tend_Fbaro[k],Nx,Ny)) return false;
   }
   
 #pragma parallel
@@ -4166,6 +4207,7 @@ mybool writeUMomentumAverages (uint n, char * outdir)
         hu_tend_relax[k][i][j] = 0;
         hu_tend_wdia[k][i][j] = 0;
         hu_tend_rand[k][i][j] = 0;
+        hu_tend_Fbaro[k][i][j] = 0;
       }
     }
   }
@@ -4218,6 +4260,7 @@ mybool writeVMomentumAverages (uint n, char * outdir)
         hv_tend_relax[k][i][j] /= avg_len_hv;
         hv_tend_wdia[k][i][j] /= avg_len_hv;
         hv_tend_rand[k][i][j] /= avg_len_hv;
+        hv_tend_Fbaro[k][i][j] /= avg_len_hv;
       }
     }
   }
@@ -4255,6 +4298,8 @@ mybool writeVMomentumAverages (uint n, char * outdir)
     if (!writeOutputFile(outfile,hv_tend_wdia[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_VMOM_RAND,k,n,outfile);
     if (!writeOutputFile(outfile,hv_tend_rand[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_VMOM_FBARO,k,n,outfile);
+    if (!writeOutputFile(outfile,hv_tend_Fbaro[k],Nx,Ny)) return false;
   }
   
 #pragma parallel
@@ -4281,6 +4326,7 @@ mybool writeVMomentumAverages (uint n, char * outdir)
         hv_tend_relax[k][i][j] = 0;
         hv_tend_wdia[k][i][j] = 0;
         hv_tend_rand[k][i][j] = 0;
+        hv_tend_Fbaro[k][i][j] = 0;
       }
     }
   }
@@ -4529,7 +4575,7 @@ void printUsage()
      "                      be modified if thickness and/or interface restoring is\n"
      "                      applied. Size: Nx x Ny x Nlay+1. Default: 0 everywhere.\n"
      "  wDiaPeriod          Period over which the imposed diapycnal velocity varies.\n"
-     "                      If <=0 then only the first record in wDiaFilen"
+     "                      If <=0 then only the first record in wDiaFile\n"
      "                      will be used, i.e. diapycnal velocity is steady. Default is 0.\n"
      "  wDiaNrecs           Number of temporal records supplied in wDiaFile.\n"
      "                      Default is 1. Must be > 0.\n"
@@ -4541,10 +4587,20 @@ void printUsage()
      "                      Optional - default is 0.0.\n"
      "  quadDragSurf        Quadratic surface drag coefficient (dimensionless).\n"
      "                      Must be >= 0. Optional - default is 0.0.\n"
-     "  uLid                x-component of rigid lid velocity, relative to which\n"
-     "                      drag willbe calculated relative. Optional - default is 0.0.\n"
-     "  vLid                y-component of rigid lid velocity, relative to which\n"
-     "                      drag willbe calculated relative. Optional - default is 0.0.\n"
+     "  uLidFile            String file name containing x-component of rigid lid\n"
+     "                      velocity (m/s), relative to which the surface drag will be\n"
+     "                      calculated. Optional - default is 0.0.\n"
+     "                      Size: Nx x Ny.\n"
+     "  vLidFile            String file name containing v-component of rigid lid\n"
+     "                      velocity (m/s), relative to which the surface drag will be\n"
+     "                      calculated. Optional - default is 0.0.\n"
+     "                      Size: Nx x Ny.\n"
+     "  FbaroXFile          String file name containing barotropic acceleration (m/s^2)\n"
+     "                      in x that will be applied throughout the water column.\n"
+     "                      Default is zero everywhere. Size: Nx x Ny.\n"
+     "  FbaroYFile          String file name containing barotropic acceleration (m/s^2)\n"
+     "                      in y that will be applied throughout the water column.\n"
+     "                      Default is zero everywhere. Size: Nx x Ny.\n"
      "  uRelaxFile          String file name containing relaxation values for\n"
      "                      u-velocities. Default is 0 everywhere for all k.\n"
      "                      Size: Nlay x Nx x Ny.\n"
@@ -4812,6 +4868,8 @@ int main (int argc, char ** argv)
   char wDiaFile[MAX_PARAMETER_FILENAME_LENGTH];
   char uLidFile[MAX_PARAMETER_FILENAME_LENGTH];
   char vLidFile[MAX_PARAMETER_FILENAME_LENGTH];
+  char FbaroXFile[MAX_PARAMETER_FILENAME_LENGTH];
+  char FbaroYFile[MAX_PARAMETER_FILENAME_LENGTH];
   char uRelaxFile[MAX_PARAMETER_FILENAME_LENGTH];
   char vRelaxFile[MAX_PARAMETER_FILENAME_LENGTH];
   char hRelaxFile[MAX_PARAMETER_FILENAME_LENGTH];
@@ -4842,6 +4900,8 @@ int main (int argc, char ** argv)
   wDiaFile[0] = '\0';
   uLidFile[0] = '\0';
   vLidFile[0] = '\0';
+  FbaroXFile[0] = '\0';
+  FbaroYFile[0] = '\0';
   uRelaxFile[0] = '\0';
   vRelaxFile[0] = '\0';
   hRelaxFile[0] = '\0';
@@ -4918,6 +4978,8 @@ int main (int argc, char ** argv)
   setParam(params,paramcntr++,"quadDragSurf",FLT_FMT,&CdSurf,true);
   setParam(params,paramcntr++,"uLidFile","%s",&uLidFile,true);
   setParam(params,paramcntr++,"vLidFile","%s",&vLidFile,true);
+  setParam(params,paramcntr++,"FbaroXFile","%s",&FbaroXFile,true);
+  setParam(params,paramcntr++,"FbaroYFile","%s",&FbaroYFile,true);
   setParam(params,paramcntr++,"uRelaxFile","%s",&uRelaxFile,true);
   setParam(params,paramcntr++,"vRelaxFile","%s",&vRelaxFile,true);
   setParam(params,paramcntr++,"hRelaxFile","%s",&hRelaxFile,true);
@@ -5033,6 +5095,9 @@ int main (int argc, char ** argv)
   
   // Flag to determine whether any wind forcing is prescribed
   useWind = (strlen(tauxFile) > 0)  || (strlen(tauyFile) > 0);
+  
+  // Flag to determine whether any barotropic forcing is prescribed
+  useFbaro = (strlen(FbaroYFile) > 0)  || (strlen(FbaroYFile) > 0);
   
   // Flag to determine whether relaxation is in use
   useRelax = (strlen(uTimeFile) > 0) || (strlen(vTimeFile) > 0) || (strlen(hTimeFile) > 0)  || (strlen(eTimeFile) > 0) || (useTracer && (strlen(bTimeFile) > 0));
@@ -5219,6 +5284,8 @@ int main (int argc, char ** argv)
   MATALLOC(vLid,Nx,Ny);
   MATALLOC(uLid_g,Nx+2*Ng,Ny+2*Ng);
   MATALLOC(vLid_g,Nx+2*Ng,Ny+2*Ng);
+  MATALLOC(Fbaro_x,Nx,Ny);
+  MATALLOC(Fbaro_y,Nx,Ny);
   
   // Divide up the 'vars' array between the dependent variables
   pvars = vars;
@@ -5334,6 +5401,7 @@ int main (int argc, char ** argv)
     MATALLOC3(hu_tend_relax,Nlay,Nx,Ny);
     MATALLOC3(hu_tend_wdia,Nlay,Nx,Ny);
     MATALLOC3(hu_tend_rand,Nlay,Nx,Ny);
+    MATALLOC3(hu_tend_Fbaro,Nlay,Nx,Ny);
   }
   
   // For averaging v-momentum equation
@@ -5354,6 +5422,7 @@ int main (int argc, char ** argv)
     MATALLOC3(hv_tend_relax,Nlay,Nx,Ny);
     MATALLOC3(hv_tend_wdia,Nlay,Nx,Ny);
     MATALLOC3(hv_tend_rand,Nlay,Nx,Ny);
+    MATALLOC3(hv_tend_Fbaro,Nlay,Nx,Ny);
   }
   
   // For averaging thickness equation
@@ -5699,6 +5768,18 @@ int main (int argc, char ** argv)
     }
   }
   
+#pragma parallel
+  
+  // Default barotropic forcing
+  for (i = 0; i < Nx; i ++)
+  {
+    for (j = 0; j < Ny; j ++)
+    {
+      Fbaro_x[i][j] = 0;
+      Fbaro_y[i][j] = 0;
+    }
+  }
+  
   // Default parameters for random forcing
   if (useRandomForcing)
   {
@@ -5730,7 +5811,7 @@ int main (int argc, char ** argv)
   ////////////////////////////////////////
   ///// BEGIN READING PARAMETER DATA /////
   ////////////////////////////////////////
-  
+    
   // Read input matrices and vectors
   if ( ( (strlen(hsFile) > 0)          &&  !readMatrix(hsFile,hhs,Nx,Ny,stderr) ) ||
        ( (strlen(hbFile) > 0)          &&  !readMatrix(hbFile,hhb,Nx,Ny,stderr) ) ||
@@ -5743,6 +5824,8 @@ int main (int argc, char ** argv)
        ( (strlen(wDiaFile) > 0)        &&  !readMatrix4(wDiaFile,wdia_ff,wDiaNrecs,Nlay+1,Nx,Ny,stderr) ) ||
        ( (strlen(uLidFile) > 0)        &&  !readMatrix(uLidFile,uLid,Nx,Ny,stderr) ) ||
        ( (strlen(vLidFile) > 0)        &&  !readMatrix(vLidFile,vLid,Nx,Ny,stderr) ) ||
+       ( (strlen(FbaroXFile) > 0)      &&  !readMatrix(FbaroXFile,Fbaro_x,Nx,Ny,stderr) ) ||
+       ( (strlen(FbaroYFile) > 0)      &&  !readMatrix(FbaroYFile,Fbaro_y,Nx,Ny,stderr) ) ||
        ( (strlen(uRelaxFile) > 0)      &&  !readMatrix3(uRelaxFile,uRelax,Nlay,Nx,Ny,stderr) ) ||
        ( (strlen(vRelaxFile) > 0)      &&  !readMatrix3(vRelaxFile,vRelax,Nlay,Nx,Ny,stderr) ) ||
        ( (strlen(hRelaxFile) > 0)      &&  !readMatrix3(hRelaxFile,hRelax,Nlay,Nx,Ny,stderr) ) ||
@@ -6588,6 +6671,7 @@ int main (int argc, char ** argv)
           hu_tend_relax[k][i][j] = 0;
           hu_tend_wdia[k][i][j] = 0;
           hu_tend_rand[k][i][j] = 0;
+          hu_tend_Fbaro[k][i][j] = 0;
         }
       }
     }
@@ -6617,6 +6701,7 @@ int main (int argc, char ** argv)
           hv_tend_buoy[k][i][j] = 0;
           hv_tend_wdia[k][i][j] = 0;
           hv_tend_rand[k][i][j] = 0;
+          hv_tend_Fbaro[k][i][j] = 0;
         }
       }
     }
