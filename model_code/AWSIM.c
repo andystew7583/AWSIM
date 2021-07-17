@@ -5097,7 +5097,7 @@ int main (int argc, char ** argv)
   useWind = (strlen(tauxFile) > 0)  || (strlen(tauyFile) > 0);
   
   // Flag to determine whether any barotropic forcing is prescribed
-  useFbaro = (strlen(FbaroYFile) > 0)  || (strlen(FbaroYFile) > 0);
+  useFbaro = (strlen(FbaroXFile) > 0)  || (strlen(FbaroYFile) > 0);
   
   // Flag to determine whether relaxation is in use
   useRelax = (strlen(uTimeFile) > 0) || (strlen(vTimeFile) > 0) || (strlen(hTimeFile) > 0)  || (strlen(eTimeFile) > 0) || (useTracer && (strlen(bTimeFile) > 0));
