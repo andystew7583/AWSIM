@@ -2940,11 +2940,11 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         if (useFbaro)
         {
           // Compute tendency
-          rhs_u = Fbaro_x[i][j] * hFsurf_west[k][i0][j0];
-          dt_uu_w[k][i][j] += rhs_u / h_west[k][i0][j0];
+          rhs_u = Fbaro_x[i][j];
+          dt_uu_w[k][i][j] += rhs_u;
           if (dt_avg_hu > 0)
           {
-            hu_tend_Fbaro[k][i][j] += avg_fac_hu*rhs_u*dt;
+            hu_tend_Fbaro[k][i][j] += h_west[k][i0][j0] * avg_fac_hu*rhs_u*dt;
           }
         }
         
@@ -3156,11 +3156,11 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         // Add barotropic forcing
         if (useFbaro)
         {
-          rhs_v = Fbaro_y[i][j] * hFsurf_south[k][i0][j0];
-          dt_vv_w[k][i][j] += rhs_v / h_south[k][i0][j0];
+          rhs_v = Fbaro_y[i][j];
+          dt_vv_w[k][i][j] += rhs_v;
           if (dt_avg_hv > 0)
           {
-            hv_tend_Fbaro[k][i][j] += avg_fac_hv*rhs_v*dt;
+            hv_tend_Fbaro[k][i][j] += h_south[k][i0][j0] * avg_fac_hv*rhs_v*dt;
           }
         }
         
