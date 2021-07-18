@@ -23,7 +23,7 @@ function hh = solveSalmonThicknesses (hh,etab,etas,MM,gg,h0)
       eta = zeros(Nlay+1,1);
       eta(Nlay+1) = etab(i,j);
       for k=Nlay:-1:2
-        eta(k) = eta(k+1) + hh(k);
+        eta(k) = eta(k+1) + hh(k,i,j);
       end
       eta(1) = etas(i,j);
         
