@@ -43,6 +43,7 @@ OUTN_UMOM_BUOY = 'UMom_buoyForce';
 OUTN_UMOM_RELAX = 'UMom_relaxation';
 OUTN_UMOM_WDIA = 'UMom_diapycnal';
 OUTN_UMOM_RAND = 'UMom_randomForcing';
+OUTN_UMOM_FBARO = 'UMom_baroForcing';
 
 %%% V-momentum equation output filenames
 OUTN_VMOM_Q = 'VMom_PVadvection';
@@ -60,6 +61,7 @@ OUTN_VMOM_BUOY = 'VMom_buoyForce';
 OUTN_VMOM_RELAX = 'VMom_relaxation';
 OUTN_VMOM_WDIA = 'UMom_diapycnal';
 OUTN_VMOM_RAND = 'VMom_randomForcing';
+OUTN_VMOM_FBARO = 'VMom_baroForcing';
 
 %%% Thickness equation output filenames
 OUTN_THIC_ADV = 'Thic_advection';
