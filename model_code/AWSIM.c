@@ -2792,13 +2792,13 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         // NOTE: This formulation assumes centered averaging of h to u and v points
         if (dt_avg_hu > 0)
         {
-          hu_tend_dhdt[k][i][j] -= 0.5 * uu_w[k][i0][j0]*avg_fac_hu*rhs_h*dt;
-          hu_tend_dhdt[k][(i+Nx+1) % Nx][j] -= 0.5 * uu_w[k][ip1][j0]*avg_fac_hu*rhs_h*dt;
+          hu_tend_dhdt[k][i][j] += 0.5 * uu_w[k][i0][j0]*avg_fac_hu*rhs_h*dt;
+          hu_tend_dhdt[k][(i+Nx+1) % Nx][j] += 0.5 * uu_w[k][ip1][j0]*avg_fac_hu*rhs_h*dt;
         }
         if (dt_avg_hv > 0)
         {
-          hv_tend_dhdt[k][i][j] -= 0.5 * vv_w[k][i0][j0]*avg_fac_hv*rhs_h*dt;
-          hv_tend_dhdt[k][i][(j+Ny+1) % Ny] -= 0.5 * vv_w[k][i0][jp1]*avg_fac_hv*rhs_h*dt;
+          hv_tend_dhdt[k][i][j] += 0.5 * vv_w[k][i0][j0]*avg_fac_hv*rhs_h*dt;
+          hv_tend_dhdt[k][i][(j+Ny+1) % Ny] += 0.5 * vv_w[k][i0][jp1]*avg_fac_hv*rhs_h*dt;
         }
         
         // Add diabatic velocity terms. Negative values mean no relaxation.
@@ -2816,13 +2816,13 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           // NOTE: This formulation assumes centered averaging of h to u and v points
           if (dt_avg_hu > 0)
           {
-            hu_tend_dhdt[k][i][j] -= 0.5 * uu_w[k][i0][j0]*avg_fac_hu*rhs_h*dt;
-            hu_tend_dhdt[k][(i+Nx+1) % Nx][j] -= 0.5 * uu_w[k][ip1][j0]*avg_fac_hu*rhs_h*dt;
+            hu_tend_wdia[k][i][j] += 0.5 * uu_w[k][i0][j0]*avg_fac_hu*rhs_h*dt;
+            hu_tend_wdia[k][(i+Nx+1) % Nx][j] += 0.5 * uu_w[k][ip1][j0]*avg_fac_hu*rhs_h*dt;
           }
           if (dt_avg_hv > 0)
           {
-            hv_tend_dhdt[k][i][j] -= 0.5 * vv_w[k][i0][j0]*avg_fac_hv*rhs_h*dt;
-            hv_tend_dhdt[k][i][(j+Ny+1) % Ny] -= 0.5 * vv_w[k][i0][jp1]*avg_fac_hv*rhs_h*dt;
+            hv_tend_wdia[k][i][j] += 0.5 * vv_w[k][i0][j0]*avg_fac_hv*rhs_h*dt;
+            hv_tend_wdia[k][i][(j+Ny+1) % Ny] += 0.5 * vv_w[k][i0][jp1]*avg_fac_hv*rhs_h*dt;
           }
         }
 
