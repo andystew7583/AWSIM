@@ -26,6 +26,7 @@ OUTN_HU_AVG = 'HU_avg';
 OUTN_HV_AVG = 'HV_avg';
 OUTN_HUU_AVG = 'HUU_avg';
 OUTN_HVV_AVG = 'HVV_avg';
+OUTN_HUV_AVG = 'HUV_avg';
 
 %%% U-momentum equation output filenames
 OUTN_UMOM_Q = 'UMom_PVadvection';
