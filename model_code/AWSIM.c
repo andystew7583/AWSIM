@@ -7019,12 +7019,12 @@ int main (int argc, char ** argv)
         {
           jm1 = (j+Ny-1) % Ny;
           
+          pp[i][j] = 0;
           for (k = 0; k < Nlay; k ++)
           {
             // Calculate Montgomery potential. Here we perform this calculation cumulatively, using the pressure set
             // by the previous layer (k-1) and adding to it to get the pressure in the current layer (k).
             // N.B. Here we use pp as an Nx x Ny matrix, even though it is reall an (Nx+2Ng) x (Ny+2*Ng) matrix
-            pp[i][j] = 0;
             if (k == 0)
             {
               pp[i][j] = useRL ? pi[i][j] : gg[0]*eta_w[0][i][j];

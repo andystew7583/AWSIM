@@ -20,6 +20,7 @@ OUTN_PI = 'P';
 OUTN_U_AVG = 'U_avg';
 OUTN_V_AVG = 'V_avg';
 OUTN_H_AVG = 'H_avg';
+OUTN_M_AVG = 'M_avg';
 OUTN_B_AVG = 'B_avg';
 OUTN_PI_AVG = 'P_avg';
 OUTN_HU_AVG = 'HU_avg';
