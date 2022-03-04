@@ -9,7 +9,7 @@
 %%%
 function fname = createOutputFilename (var, n, k)
 
-  if (k < 0)
+  if (k < 1)
     kstr = '';
   else
     kstr = num2str(k-1);

@@ -209,3 +209,7 @@ taux = readDataFile3D(params_file,dirpath,'tauxFile',tauNrecs,Nx,Ny,zeros(tauNre
 tauy = readDataFile3D(params_file,dirpath,'tauyFile',tauNrecs,Nx,Ny,zeros(tauNrecs,Nx,Ny)); 
 uLid = readDataFile(params_file,dirpath,'uLidFile',Nx,Ny,zeros(Nx,Ny)); 
 vLid = readDataFile(params_file,dirpath,'vLidFile',Nx,Ny,zeros(Nx,Ny)); 
+
+%%% Load barotropic forcing
+Fbaro_x = readDataFile(params_file,dirpath,'FbaroXFile',Nx,Ny,zeros(Nx,Ny)); 
+Fbaro_y = readDataFile(params_file,dirpath,'FbaroYFile',Nx,Ny,zeros(Nx,Ny)); 

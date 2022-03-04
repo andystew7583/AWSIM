@@ -11,7 +11,7 @@
 #include "nsode.h"
 
 // Define to allow inclusion of FFTW package, required for random forcing
-#undef ALLOW_FFTW
+#define ALLOW_FFTW
 
 // Max name length for files containing input parameter arrays
 #define MAX_PARAMETER_FILENAME_LENGTH 256
