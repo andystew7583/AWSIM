@@ -32,6 +32,8 @@ function timeavg (local_home_dir,run_name,tmin,tmax)
     
   hh_w_tavg = zeros(Nx,Ny,Nlay);
   hh_s_tavg = zeros(Nx,Ny,Nlay);
+  eta_w_tavg = zeros(Nx,Ny,Nlay+1);
+  eta_s_tavg = zeros(Nx,Ny,Nlay+1);
   hu_tavg = zeros(Nx,Ny,Nlay);
   hv_tavg = zeros(Nx,Ny,Nlay);
   husq_tavg = zeros(Nx,Ny,Nlay);
@@ -49,6 +51,10 @@ function timeavg (local_home_dir,run_name,tmin,tmax)
   hvdMdy_tavg = zeros(Nx,Ny,Nlay);
   hdMdx_tavg = zeros(Nx,Ny,Nlay);
   hdMdy_tavg = zeros(Nx,Ny,Nlay);
+  edMdx_p_tavg = zeros(Nx,Ny,Nlay);
+  edMdx_m_tavg = zeros(Nx,Ny,Nlay);
+  edMdy_p_tavg = zeros(Nx,Ny,Nlay);
+  edMdy_m_tavg = zeros(Nx,Ny,Nlay);
   hphi_tavg = zeros(Nx,Ny,Nlay);
   hz_tavg = zeros(Nx,Ny,Nlay);
   hsq_tavg = zeros(Nx,Ny,Nlay);
@@ -140,13 +146,17 @@ function timeavg (local_home_dir,run_name,tmin,tmax)
     %%% volume fluxes
     hh_w = 0.5*(hh(1:Nx,:,:)+hh([Nx 1:Nx-1],:,:)); %%% Here we don't care if there are walls because h on
     hh_s = 0.5*(hh(:,1:Ny,:)+hh(:,[Ny 1:Ny-1],:)); %%% wall points contributes nothing to energy budget
+    eta_w = 0.5*(eta(1:Nx,:,:)+eta([Nx 1:Nx-1],:,:)); %%% Here we don't care if there are walls because h on
+    eta_s = 0.5*(eta(:,1:Ny,:)+eta(:,[Ny 1:Ny-1],:)); %%% wall points contributes nothing to energy budget
     
     %%% Products
     hh_w_tavg = hh_w_tavg + hh_w;
+    eta_w_tavg = eta_w_tavg + eta_w;
     hu_tavg = hu_tavg + hh_w.*uu;
 %     husq_tavg = husq_tavg + hh_w.*uu.^2;
     husq_tavg = husq_tavg + hh.*0.5.*(uu(1:Nx,:,:).^2+uu([2:Nx 1],:,:).^2);
     hh_s_tavg = hh_s_tavg + hh_s;
+    eta_s_tavg = eta_s_tavg + eta_s;
     hv_tavg = hv_tavg + hh_s.*vv;
 %     hvsq_tavg = hvsq_tavg + hh_s.*vv.^2;  
     hvsq_tavg = hvsq_tavg + hh.*0.5.*(vv(:,1:Ny,:).^2+vv(:,[2:Ny 1],:).^2);
@@ -160,7 +170,11 @@ function timeavg (local_home_dir,run_name,tmin,tmax)
     hudMdx_tavg = hudMdx_tavg + hh_w.*uu.*(MM(1:Nx,:,:)-MM([Nx 1:Nx-1],:,:))/dx;      
     hvdMdy_tavg = hvdMdy_tavg + hh_s.*vv.*(MM(:,1:Ny,:)-MM(:,[Ny 1:Ny-1],:))/dy;      
     hdMdx_tavg = hdMdx_tavg + hh_w.*(MM(1:Nx,:,:)-MM([Nx 1:Nx-1],:,:))/dx;
-    hdMdy_tavg = hdMdy_tavg + hh_s.*(MM(:,1:Ny,:)-MM(:,[Ny 1:Ny-1],:))/dy;      
+    hdMdy_tavg = hdMdy_tavg + hh_s.*(MM(:,1:Ny,:)-MM(:,[Ny 1:Ny-1],:))/dy;
+    edMdx_p_tavg = edMdx_p_tavg + eta_w(:,:,1:Nlay).*(MM(1:Nx,:,:)-MM([Nx 1:Nx-1],:,:))/dx;
+    edMdy_p_tavg = edMdy_p_tavg + eta_s(:,:,1:Nlay).*(MM(:,1:Ny,:)-MM(:,[Ny 1:Ny-1],:))/dy;     
+    edMdx_m_tavg = edMdx_m_tavg + eta_w(:,:,2:Nlay+1).*(MM(1:Nx,:,:)-MM([Nx 1:Nx-1],:,:))/dx;
+    edMdy_m_tavg = edMdy_m_tavg + eta_s(:,:,2:Nlay+1).*(MM(:,1:Ny,:)-MM(:,[Ny 1:Ny-1],:))/dy;     
     hphi_tavg = hphi_tavg + phi.*hh;
     hz_tavg = hz_tavg + hh.*zz;
     hsq_tavg = hsq_tavg + hh.^2;
@@ -203,6 +217,8 @@ function timeavg (local_home_dir,run_name,tmin,tmax)
   
   hh_w_tavg = hh_w_tavg/navg;  
   hh_s_tavg = hh_s_tavg/navg;  
+  eta_w_tavg = eta_w_tavg/navg;  
+  eta_s_tavg = eta_s_tavg/navg;    
   hu_tavg = hu_tavg/navg;  
   hv_tavg = hv_tavg/navg;  
   husq_tavg = husq_tavg/navg;  
@@ -220,6 +236,10 @@ function timeavg (local_home_dir,run_name,tmin,tmax)
   hvdMdy_tavg = hvdMdy_tavg/navg;
   hdMdx_tavg = hdMdx_tavg/navg;      
   hdMdy_tavg = hdMdy_tavg/navg;
+  edMdx_p_tavg = edMdx_p_tavg/navg;
+  edMdy_p_tavg = edMdy_p_tavg/navg;
+  edMdx_m_tavg = edMdx_m_tavg/navg;
+  edMdy_m_tavg = edMdy_m_tavg/navg;
   hphi_tavg = hphi_tavg/navg;      
   hz_tavg = hz_tavg/navg;      
     
@@ -235,6 +255,7 @@ function timeavg (local_home_dir,run_name,tmin,tmax)
     'pdedx_tavg','pdedy_tavg','hphi_tavg','hz_tavg', ...
     'husq_tavg','hvsq_tavg','huv_tavg', ...
     'hudzdx_tavg','hvdzdy_tavg','hudMdx_tavg','hvdMdy_tavg', ...
-    'hdMdx_tavg','hdMdy_tavg');
+    'hdMdx_tavg','hdMdy_tavg','eta_w_tavg','eta_s_tavg',...
+    'edMdx_p_tavg','edMdy_p_tavg','edMdx_m_tavg','edMdy_m_tavg');
   
 end
