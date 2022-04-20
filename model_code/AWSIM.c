@@ -6068,9 +6068,9 @@ int main (int argc, char ** argv)
       for (j = 0; j < Ny+2*Ng; j ++)
       {
         hhb_w[i][j] = hhb_w[2*Ng-i-1][j];
-        hhb_w[Nx+Ng+i][j] = hhb_w[Ny+Ng-i-1][j];
+        hhb_w[Nx+Ng+i][j] = hhb_w[Nx+Ng-i-1][j];
         Omega_z_w[i][j] = Omega_z_w[Ng][j];
-        Omega_z_w[Nx+Ng+i][j] = Omega_z_w[Ny+Ng][j];
+        Omega_z_w[Nx+Ng+i][j] = Omega_z_w[Nx+Ng][j];
       }
     }
   }
