@@ -106,6 +106,7 @@
 #define VARID_H 2
 #define VARID_B 3
 #define VARID_PI 4
+#define VARID_W 5
 
 #define VARID_U_AVG 10
 #define VARID_V_AVG 11
@@ -113,11 +114,12 @@
 #define VARID_M_AVG 13
 #define VARID_B_AVG 14
 #define VARID_PI_AVG 15
-#define VARID_HU_AVG 16
-#define VARID_HV_AVG 17
-#define VARID_HUU_AVG 18
-#define VARID_HVV_AVG 19
-#define VARID_HUV_AVG 20
+#define VARID_W_AVG 16
+#define VARID_HU_AVG 17
+#define VARID_HV_AVG 18
+#define VARID_HUU_AVG 19
+#define VARID_HVV_AVG 20
+#define VARID_HUV_AVG 21
 
 #define VARID_UMOM_Q 30
 #define VARID_UMOM_GRADM 31
@@ -156,6 +158,17 @@
 #define VARID_THIC_ADV 70
 #define VARID_THIC_RELAX 71
 
+#define VARID_ENERGY_UPFLUX 80
+#define VARID_ENERGY_UKEFLUX 81
+#define VARID_ENERGY_UPEFLUX 82
+#define VARID_ENERGY_VPFLUX 83
+#define VARID_ENERGY_VKEFLUX 84
+#define VARID_ENERGY_VPEFLUX 85
+#define VARID_ENERGY_WINDWORK 86
+#define VARID_ENERGY_FRICDISS 87
+#define VARID_ENERGY_VISCDISS 88
+#define VARID_ENERGY_DIAPROD 89
+
 
 // Output filenames
 static const char OUTN_U[] = "U";
@@ -163,6 +176,7 @@ static const char OUTN_V[] = "V";
 static const char OUTN_H[] = "H";
 static const char OUTN_B[] = "B";
 static const char OUTN_PI[] = "P";
+static const char OUTN_W[] = "W";
 
 // Averaged output filenames
 static const char OUTN_U_AVG[] = "U_avg";
@@ -171,6 +185,7 @@ static const char OUTN_H_AVG[] = "H_avg";
 static const char OUTN_M_AVG[] = "M_avg";
 static const char OUTN_B_AVG[] = "B_avg";
 static const char OUTN_PI_AVG[] = "P_avg";
+static const char OUTN_W_AVG[] = "W_avg";
 static const char OUTN_HU_AVG[] = "HU_avg";
 static const char OUTN_HV_AVG[] = "HV_avg";
 static const char OUTN_HUU_AVG[] = "HUU_avg";
@@ -216,6 +231,18 @@ static const char OUTN_VMOM_FBARO[] = "VMom_baroForcing";
 // Thickness equation output filenames
 static const char OUTN_THIC_ADV[] = "Thic_advection";
 static const char OUTN_THIC_RELAX[] = "Thic_relaxation";
+
+// Energy equation output filenames
+static const char OUTN_ENERGY_UPFLUX[] = "Energy_uPressureFlux";
+static const char OUTN_ENERGY_UKEFLUX[] = "Energy_uKEflux";
+static const char OUTN_ENERGY_UPEFLUX[] = "Energy_uPEflux";
+static const char OUTN_ENERGY_VPFLUX[] = "Energy_vPressureFlux";
+static const char OUTN_ENERGY_VKEFLUX[] = "Energy_vuKEflux";
+static const char OUTN_ENERGY_VPEFLUX[] = "Energy_vPEflux";
+static const char OUTN_ENERGY_WINDWORK[] = "Energy_windWork";
+static const char OUTN_ENERGY_FRICDISS[] = "Energy_frictionalDiss";
+static const char OUTN_ENERGY_VISCDISS[] = "Energy_viscousDiss";
+static const char OUTN_ENERGY_DIAPROD[] = "Energy_diapycnalProd";
 
 // Time tracking file and energy/enstrophy diagnostics file
 static const char TFILE[] = "time.txt";

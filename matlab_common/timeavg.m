@@ -43,6 +43,7 @@ function timeavg (local_home_dir,run_name,tmin,tmax)
   dzdt_tavg = zeros(Nx,Ny,Nlay);
   detadt_tavg = zeros(Nx,Ny,Nlay+1);
   hdzdt_tavg = zeros(Nx,Ny,Nlay);
+  pdedt_tavg = zeros(Nx,Ny,Nlay+1);
   pdedx_tavg = zeros(Nx,Ny,Nlay+1);
   pdedy_tavg = zeros(Nx,Ny,Nlay+1);
   hudzdx_tavg = zeros(Nx,Ny,Nlay);
@@ -182,12 +183,15 @@ function timeavg (local_home_dir,run_name,tmin,tmax)
     %%% Can only compute this after first output file has been found
     if (~firstFrame)      
       hdzdt_tavg = hdzdt_tavg + 0.5*(hh+hprev).*(zz-zprev)/(t-tprev);
+      pdedt_tavg = pdedt_tavg + 0.5*(phi_int+gsum(1)*eta+phi_int_prev+gsum(1)*eta_prev).*(eta-eta_prev)/(t-tprev);
       t_total = t_total + (t-tprev);
     end
     
     %%% Store for use in computing hdz/dt at next output time
     hprev = hh;
     zprev = zz;
+    eta_prev = eta;
+    phi_int_prev = phi_int;
     tprev = t;
     
     %%% Increment counter
@@ -228,6 +232,7 @@ function timeavg (local_home_dir,run_name,tmin,tmax)
   dzdt_tavg = dzdt_tavg/navg;      
   detadt_tavg = detadt_tavg/navg;      
   hdzdt_tavg = hdzdt_tavg/(navg-1); %%% Only have navg-1 time differences
+  pdedt_tavg = pdedt_tavg/(navg-1); %%% Only have navg-1 time differences
   pdedx_tavg = pdedx_tavg/navg;      
   pdedy_tavg = pdedy_tavg/navg;      
   hudzdx_tavg = hudzdx_tavg/navg;      
@@ -251,7 +256,7 @@ function timeavg (local_home_dir,run_name,tmin,tmax)
     'zz_tavg','eta_tavg', ...
     'hu_tavg','hv_tavg','hh_w_tavg','hh_s_tavg', ...
     'husq_tavg','hvsq_tavg','huv_tavg', ...
-    'dzdt_tavg','detadt_tavg','hdzdt_tavg', ...
+    'dzdt_tavg','detadt_tavg','hdzdt_tavg','pdedt_tavg', ...
     'pdedx_tavg','pdedy_tavg','hphi_tavg','hz_tavg', ...
     'husq_tavg','hvsq_tavg','huv_tavg', ...
     'hudzdx_tavg','hvdzdy_tavg','hudMdx_tavg','hvdMdy_tavg', ...

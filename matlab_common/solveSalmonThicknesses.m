@@ -27,7 +27,7 @@ function hh = solveSalmonThicknesses (hh,etab,etas,MM,gg,h0)
       end
       eta(1) = etas(i,j);
         
-      %%% Iteratively solve for internal layer interfaces
+      %%% Iteratively solve for internal layer interfaces      
       eta = lsqnonlin(@(x) myfun(x,etab(i,j),etas(i,j),MM(:,i,j),gg,h0),eta(2:Nlay),etab(i,j)*ones(Nlay-1,1),etas(i,j)*zeros(Nlay-1,1),myoptions);  
       eta = [etas(i,j); eta; etab(i,j)];
       

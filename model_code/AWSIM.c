@@ -18,7 +18,7 @@
 #endif
 
 // Must match number of input parameters defined via "setParam" below
-#define NPARAMS 90
+#define NPARAMS 91
 
 // Avoids memory errors associated with usual definition of bool
 typedef int mybool;
@@ -319,6 +319,26 @@ real t_next_avg_h = 0;    // Next save time for averaged output
 real avg_len_h = 0;       // True length of time average
 real *** h_tend_adv = NULL;
 real *** h_tend_relax = NULL;
+
+// Parameters for averaging energy diagnostics
+real avg_fac_e = 1;        // Fraction of time step used for averaging
+uint n_avg_e = 0;         // Keeps track of number of averages computed
+real dt_avg_e = 0;        // Save time step for averaged output
+uint n_prev_avg_e = 0;    // Model time step number corresponding to previous average output
+real t_next_avg_e = 0;    // Next save time for averaged output
+real avg_len_e = 0;       // True length of time average
+real *** e_uPflux[k][i][j] = NULL;
+real *** e_uKEflux[k][i][j] = NULL;
+real *** e_uPEflux[k][i][j] = NULL;
+real *** e_vPflux[k][i][j] = NULL;
+real *** e_vKEflux[k][i][j] = NULL;
+real *** e_vPEflux[k][i][j] = NULL;
+real *** e_windWork[k][i][j] = NULL;
+real *** e_fricDiss[k][i][j] = NULL;
+real *** e_viscDiss[k][i][j] = NULL;
+real *** e_diaProd[k][i][j] = NULL;
+real ** e_pres = NULL;
+real ** E_KE = NULL;
 
 // Time-stepping method to use
 uint timeSteppingScheme = TIMESTEPPING_AB3;
@@ -2306,7 +2326,9 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         }
       }
     }
+  
   }
+    
   
   
   
@@ -2366,7 +2388,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         // by the previous layer (k-1) and adding to it to get the pressure in the current layer (k).
         if (k == 0)
         {
-          // In rigid lid case we'll add the surface pressure layer
+          // In rigid lid case we'll add the surface pressure later
           if (useRL)
           {
             pp[i][j] = 0;
@@ -2824,6 +2846,13 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             hv_tend_wdia[k][i][j] += 0.5 * vv_w[k][i0][j0]*avg_fac_hv*rhs_h*dt;
             hv_tend_wdia[k][i][(j+Ny+1) % Ny] += 0.5 * vv_w[k][i0][jp1]*avg_fac_hv*rhs_h*dt;
           }
+          
+          // Calculate energy tendency due to diapycnal fluxes
+          if (dt_avg_e > 0)
+          {
+            e_diaProd[k][i][j] += - geff[k]*(eta_w[k][i0][j0]*wdia[k][i0][j0]-eta_w[k+1][i0][j0]*wdia[k+1][i0][j0])*avg_fac_e*dt
+                                  - (-geff[k]*POW4(h0)/POW3(hh_w[k][i][j])/3) * (-rhs_h) * avg_fac_e*dt;
+          }
         }
 
         ///////////////////////////////
@@ -2908,6 +2937,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             hu_tend_A2[k][i][j] += avg_fac_hu*rhs_u*dt;
           }
+          if (dt_avg_e > 0)
+          {
+            e_viscDiss[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
+          }
         }
 
         // Add biharmonic viscosity
@@ -2922,6 +2955,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             hu_tend_A4[k][i][j] += avg_fac_hu*rhs_u*dt;
           }
+          if (dt_avg_e > 0)
+          {
+            e_viscDiss[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
+          }
         }
         
         // Add wind stress
@@ -2933,6 +2970,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (dt_avg_hu > 0)
           {
             hu_tend_wind[k][i][j] += avg_fac_hu*rhs_u*dt;
+          }
+          if (dt_avg_e > 0)
+          {
+            e_windWork[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -2957,6 +2998,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             hu_tend_rDrag[k][i][j] += avg_fac_hu*rhs_u*dt;
           }
+          if (dt_avg_e > 0)
+          {
+            e_fricDiss[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
+          }
         }
         
         // Add linear surface drag
@@ -2967,6 +3012,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (dt_avg_hu > 0)
           {
             hu_tend_rSurf[k][i][j] += avg_fac_hu*rhs_u*dt;
+          }
+          if (dt_avg_e > 0)
+          {
+            e_windWork[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -2979,6 +3028,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             hu_tend_CdBot[k][i][j] += avg_fac_hu*rhs_u*dt;
           }
+          if (dt_avg_e > 0)
+          {
+            e_fricDiss[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
+          }
         }
         
         // Add quadratic surface drag
@@ -2989,6 +3042,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (dt_avg_hu > 0)
           {
             hu_tend_CdSurf[k][i][j] += avg_fac_hu*rhs_u*dt;
+          }
+          if (dt_avg_e > 0)
+          {
+            e_windWork[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3151,6 +3208,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             hv_tend_wind[k][i][j] += avg_fac_hv*rhs_v*dt;
           }
+          if (dt_avg_e > 0)
+          {
+            e_windWork[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+          }
         }
         
         // Add barotropic forcing
@@ -3257,6 +3318,37 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             hv_tend_relax[k][i][j] += h_south[k][i0][j0] * avg_fac_hv*rhs_v*dt;
           }
         }
+        
+        
+        
+        
+        
+        // Additional energy budget terms
+        if (dt_avg_e > 0)
+        {
+          // Pressure flux
+          pres_0 = pp[i0][j0] - geff[k]*0.5*(eta_w[k][i0][j0]+eta_w[k+1][i0][j0]);
+          pres_im1 = pp[im1][j0] - geff[k]*0.5*(eta_w[k][im1][j0]+eta_w[k+1][im1][j0]);
+          pres_jm1 = pp[i0][jm1] - geff[k]*0.5*(eta_w[k][i0][jm1]+eta_w[k+1][i0][jm1]);
+          e_uPflux = [k][i][j] += h_west[k][i0][j0] * 0.5*(KE_B[i0][j0]+KE_B[im1][j0]) * avg_fac_e*dt;
+          e_uPflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*(pres_0+pres_im1) * avg_fac_e*dt;
+          e_vPflux[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*(pres_0+pres_jm1) * avg_fac_e*dt;
+          
+          // PE flux
+          e_uPflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*((MM_B[i0][j0]-pres_0)+(MM_B[im1][j0]-pres_im1)) * avg_fac_e*dt;
+          e_vPflux[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*((MM_B[i0][j0]-pres_0)+(MM_B[i0][jm1]-pres_jm1)) * avg_fac_e*dt;
+          
+          // KE flux
+          e_uKEflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*(KE_B[i0][j0]+KE_B[im1][j0]) * avg_fac_e*dt;
+          e_vKEflux[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*(KE_B[i0][j0]+KE_B[i0][jm1]) * avg_fac_e*dt;
+        }
+        
+        
+        
+        
+        
+        
+        
         
         
         ///////////////////////
@@ -3671,6 +3763,11 @@ void constructOutputName (char * outdir, int varid, int k, uint n, char * outfil
       strcat(outfile,OUTN_PI);
       break;
     }
+    case VARID_W:
+    {
+      strcat(outfile,OUTN_W);
+      break;
+    }
       
     // Time-averaged quantities
     case VARID_U_AVG:
@@ -3701,6 +3798,11 @@ void constructOutputName (char * outdir, int varid, int k, uint n, char * outfil
     case VARID_PI_AVG:
     {
       strcat(outfile,OUTN_PI_AVG);
+      break;
+    }
+    case VARID_W_AVG:
+    {
+      strcat(outfile,OUTN_W_AVG);
       break;
     }
     case VARID_HU_AVG:
@@ -3905,6 +4007,43 @@ void constructOutputName (char * outdir, int varid, int k, uint n, char * outfil
       break;
     }
       
+    // Energy equation diagnostics
+    case VARID_ENERGY_PFLUX:
+    {
+      strcat(outfile,OUTN_ENERGY_PFLUX);
+      break;
+    }
+    case VARID_ENERGY_KEFLUX:
+    {
+      strcat(outfile,OUTN_ENERGY_KEFLUX);
+      break;
+    }
+    case VARID_ENERGY_PEFLUX:
+    {
+      strcat(outfile,OUTN_ENERGY_PEFLUX);
+      break;
+    }
+    case VARID_ENERGY_WINDWORK:
+    {
+      strcat(outfile,OUTN_ENERGY_WINDWORK);
+      break;
+    }
+    case VARID_ENERGY_FRICDISS:
+    {
+      strcat(outfile,OUTN_ENERGY_FRICDISS);
+      break;
+    }
+    case VARID_ENERGY_DIAPROD:
+    {
+      strcat(outfile,OUTN_ENERGY_DIAPROD);
+      break;
+    }
+    case VARID_ENERGY_DIAPROD:
+    {
+      strcat(outfile,OUTN_ENERGY_DIAPROD);
+      break;
+    }
+      
     default:
     {
       fprintf(stderr,"ERROR: Unknown variable ID (%d) specified in constructOutputName\n",varid);
@@ -3972,7 +4111,7 @@ mybool writeOutputFile (char * outfile, real ** mat, uint m, uint n)
  * or true if the write was successful.
  *
  */
-mybool writeModelState (const int t, const int n, real *** uu, real *** vv, real *** hh, real *** bb, real ** pi, char * outdir)
+mybool writeModelState (const int t, const int n, real *** uu, real *** vv, real *** hh, real *** bb, real ** pi, real *** wdia, char * outdir)
 {
   uint k = 0;
   char outfile[MAX_PARAMETER_FILENAME_LENGTH];
@@ -3998,7 +4137,17 @@ mybool writeModelState (const int t, const int n, real *** uu, real *** vv, real
       constructOutputName(outdir,VARID_B,k,n,outfile);
       if (!writeOutputFile(outfile,bb[k],Nx,Ny)) return false;
     }
+    
+    // Write iteration data for wdia
+    constructOutputName(outdir,VARID_W,k,n,outfile);
+    if (!writeOutputFile(outfile,wdia[k],Nx,Ny)) return false;
   }
+  
+  // Write iteration data for wdia at the sea floor (should be zero in most circumstances,
+  // but it's conceivable that a flux through the sea floor would be desireable for some applications)
+  k = Nlay;
+  constructOutputName(outdir,VARID_W,k,n,outfile);
+  if (!writeOutputFile(outfile,wdia[k],Nx,Ny)) return false;
 
   // Write iteration data for surface pressure
   if (useRL)
@@ -4029,7 +4178,7 @@ mybool writeModelState (const int t, const int n, real *** uu, real *** vv, real
  * or true if the write was successful.
  *
  */
-mybool writeAverageState (const int t, const int n, real *** uu, real *** vv, real *** hh, real *** MM, real *** bb, real ** pi, real *** hu, real *** hv, real *** huu, real *** hvv, real *** huv, char * outdir)
+mybool writeAverageState (const int t, const int n, real *** uu, real *** vv, real *** hh, real *** MM, real *** bb, real ** pi, real *** wdia, real *** hu, real *** hv, real *** huu, real *** hvv, real *** huv, char * outdir)
 {
   uint k = 0;
   char outfile[MAX_PARAMETER_FILENAME_LENGTH];
@@ -4052,6 +4201,10 @@ mybool writeAverageState (const int t, const int n, real *** uu, real *** vv, re
     // Write average data for M
     constructOutputName(outdir,VARID_M_AVG,k,n,outfile);
     if (!writeOutputFile(outfile,MM[k],Nx,Ny)) return false;
+    
+    // Write average data for wdia
+    constructOutputName(outdir,VARID_W_AVG,k,n,outfile);
+    if (!writeOutputFile(outfile,wdia[k],Nx,Ny)) return false;
     
     // Write average data for b
     if (useTracer)
@@ -4080,6 +4233,11 @@ mybool writeAverageState (const int t, const int n, real *** uu, real *** vv, re
     constructOutputName(outdir,VARID_HUV_AVG,k,n,outfile);
     if (!writeOutputFile(outfile,huv[k],Nx,Ny)) return false;
   }
+  
+  // Write average data for wdia at the sea floor
+  k = Nlay;
+  constructOutputName(outdir,VARID_W_AVG,k,n,outfile);
+  if (!writeOutputFile(outfile,wdia[k],Nx,Ny)) return false;
   
   // Write iteration data for surface pressure
   if (useRL)
@@ -4404,6 +4562,97 @@ mybool writeThicknessAverages (uint n, char * outdir)
 
 
 
+/**
+ *
+ * writeEnergyAverages
+ *
+ * Calculates averages of terms in the energy equation, writes averages to output
+ * files, and resets averaging buffers and parameters.
+ *
+ */
+mybool writeEnergyAverages (uint n, char * outdir)
+{
+  uint i,j,k;
+  char outfile[MAX_PARAMETER_FILENAME_LENGTH];
+  
+#pragma parallel
+  
+  // Divide by averaging step length to compute averages
+  for (i = 0; i < Nx; i ++)
+  {
+    for (j = 0; j < Ny; j ++)
+    {
+      for (k = 0; k < Nlay; k ++)
+      {
+        e_uPflux[k][i][j] /= avg_len_e;
+        e_uKEflux[k][i][j] /= avg_len_e;
+        e_uPEflux[k][i][j] /= avg_len_e;
+        e_vPflux[k][i][j] /= avg_len_e;
+        e_vKEflux[k][i][j] /= avg_len_e;
+        e_vPEflux[k][i][j] /= avg_len_e;
+        e_windWork[k][i][j] /= avg_len_e;
+        e_fricDiss[k][i][j] /= avg_len_e;
+        e_viscDiss[k][i][j] /= avg_len_e;
+        e_diaProd[k][i][j] /= avg_len_e;
+      }
+    }
+  }
+  
+  // Save averages to output files
+  for (k = 0; k < Nlay; k ++)
+  {
+    constructOutputName(outdir,VARID_ENERGY_UPFLUX,k,n,outfile);
+    if (!writeOutputFile(outfile,e_uPflux[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_UKEFLUX,k,n,outfile);
+    if (!writeOutputFile(outfile,e_uKEflux[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_UPEFLUX,k,n,outfile);
+    if (!writeOutputFile(outfile,e_uPEflux[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_VPFLUX,k,n,outfile);
+    if (!writeOutputFile(outfile,e_vPflux[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_VKEFLUX,k,n,outfile);
+    if (!writeOutputFile(outfile,e_vKEflux[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_VPEFLUX,k,n,outfile);
+    if (!writeOutputFile(outfile,e_vPEflux[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_WINDWORK,k,n,outfile);
+    if (!writeOutputFile(outfile,e_windWork[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_FRICDISS,k,n,outfile);
+    if (!writeOutputFile(outfile,e_fricDiss[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_VISCDISS,k,n,outfile);
+    if (!writeOutputFile(outfile,e_viscDiss[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_DIAPROD,k,n,outfile);
+    if (!writeOutputFile(outfile,e_diaProd[k],Nx,Ny)) return false;
+  }
+  
+#pragma parallel
+  
+  // Reset averaging buffers
+  for (i = 0; i < Nx; i ++)
+  {
+    for (j = 0; j < Ny; j ++)
+    {
+      for (k = 0; k < Nlay; k ++)
+      {
+        e_uPflux[k][i][j] = 0;
+        e_uKEflux[k][i][j] = 0;
+        e_uPEflux[k][i][j] = 0;
+        e_vPflux[k][i][j] = 0;
+        e_vKEflux[k][i][j] = 0;
+        e_vPEflux[k][i][j] = 0;
+        e_windWork[k][i][j] = 0;
+        e_fricDiss[k][i][j] = 0;
+        e_viscDiss[k][i][j] = 0;
+        e_diaProd[k][i][j] = 0;
+      }
+    }
+  }
+  
+  return true;
+}
+
+
+
+
+
 
 
 
@@ -4465,6 +4714,11 @@ void printUsage()
      "  savefreqThic        Frequency of averaged output of thickness equation terms,\n"
      "                      in units of time. For values <=0 no averaged products will be\n"
      "                      calculated. Optional - default is 0.\n"
+     "  savefreqEnergy      Frequency of averaged diagnostics of energy budget terms,\n"
+     "                      in units of time. For values <=0 no averaged products will be\n"
+     "                      calculated. Optional - default is 0. N.B. The energy\n"
+     "                      diagnostics neglect barotropic forcing and horizontal buoyancy\n"
+     "                      effects.\n"
      "  savefreqEZ          Storage frequency for energy and potential\n"
      "                      enstrophy, in units of time.\n"
      "                      Negative or zero values disable this diagnostic.\n"
@@ -4817,6 +5071,7 @@ int main (int argc, char ** argv)
   real *** MM_avg = NULL;
   real *** bb_avg = NULL;
   real ** pi_avg = NULL;
+  real *** wdia_avg = NULL;
   real *** hu_avg = NULL;
   real *** hv_avg = NULL;
   real *** huu_avg = NULL;
@@ -4828,6 +5083,7 @@ int main (int argc, char ** argv)
   real *** Mdt = NULL;
   real *** bdt = NULL;
   real ** pidt = NULL;
+  real *** wdt = NULL;
   real *** hudt = NULL;
   real *** hvdt = NULL;
   real *** huudt = NULL;
@@ -4931,6 +5187,7 @@ int main (int argc, char ** argv)
   setParam(params,paramcntr++,"savefreqUMom",FLT_FMT,&dt_avg_hu,true);
   setParam(params,paramcntr++,"savefreqVMom",FLT_FMT,&dt_avg_hv,true);
   setParam(params,paramcntr++,"savefreqThic",FLT_FMT,&dt_avg_h,true);
+  setParam(params,paramcntr++,"savefreqEnergy",FLT_FMT,&dt_avg_e,true);
   setParam(params,paramcntr++,"savefreqEZ",FLT_FMT,&dt_EZ,true);
   setParam(params,paramcntr++,"restart","%d",&restart,true);
   setParam(params,paramcntr++,"startIdx","%u",&n0,true);
@@ -5224,6 +5481,14 @@ int main (int argc, char ** argv)
     n_prev_avg_h = 0;
     n_avg_h = round(tmin/dt_avg_h) + 1;
   }
+  
+  // Initialize next output time for V-momentum diagnostics
+  if (dt_avg_e > 0)
+  {
+    t_next_avg_e = tmin + dt_avg_e;
+    n_prev_avg_e = 0;
+    n_avg_e = round(tmin/dt_avg_e) + 1;
+  }
 
   //  Multigrid-specific parameters
   if (useRL && use_MG)
@@ -5362,6 +5627,7 @@ int main (int argc, char ** argv)
       MATALLOC3(bb_avg,Nlay,Nx,Ny);
     }
     MATALLOC(pi_avg,Nx,Ny);
+    MATALLOC3(wdia_avg,Nlay+1,Nx,Ny);
     MATALLOC3(hu_avg,Nlay,Nx,Ny);
     MATALLOC3(huu_avg,Nlay,Nx,Ny);
     MATALLOC3(hv_avg,Nlay,Nx,Ny);
@@ -5376,6 +5642,7 @@ int main (int argc, char ** argv)
       MATALLOC3(bdt,Nlay,Nx,Ny);
     }
     MATALLOC(pidt,Nx,Ny);
+    MATALLOC3(wdt,Nlay+1,Nx,Ny);
     MATALLOC3(hudt,Nlay,Nx,Ny);
     MATALLOC3(huudt,Nlay,Nx,Ny);
     MATALLOC3(hvdt,Nlay,Nx,Ny);
@@ -5430,6 +5697,21 @@ int main (int argc, char ** argv)
   {
     MATALLOC3(h_tend_adv,Nlay,Nx,Ny);
     MATALLOC3(h_tend_relax,Nlay,Nx,Ny);
+  }
+  
+  // For averaging energy budget diagnostics
+  if (dt_avg_e > 0)
+  {
+    MATALLOC3(e_uPflux,Nlay,Nx,Ny);
+    MATALLOC3(e_uKEflux,Nlay,Nx,Ny);
+    MATALLOC3(e_uPEflux,Nlay,Nx,Ny);
+    MATALLOC3(e_vPflux,Nlay,Nx,Ny);
+    MATALLOC3(e_vKEflux,Nlay,Nx,Ny);
+    MATALLOC3(e_vPEflux,Nlay,Nx,Ny);
+    MATALLOC3(e_windWork,Nlay,Nx,Ny);
+    MATALLOC3(e_fricDiss,Nlay,Nx,Ny);
+    MATALLOC3(e_viscDiss,Nlay,Nx,Ny);
+    MATALLOC3(e_diaProd,Nlay,Nx,Ny);
   }
   
   // Work arrays for time derivative function
@@ -6307,6 +6589,20 @@ int main (int argc, char ** argv)
     geff[k] = geff[k-1] + gg[k];
   }
   
+#pragma parallel
+  
+  // Initialize diapycnal velocity to zero - it will be set in tderiv
+  for (i = 0; i < Nx; i ++)
+  {
+    for (j = 0; j < Ny; j ++)
+    {
+      for (k = 0; k < Nlay+1; k ++)
+      {
+        wdia[k][i][j] = 0;
+      }
+    }
+  }
+  
   ///////////////////////////
   ///// END WORK ARRAYS /////
   ///////////////////////////
@@ -6603,7 +6899,7 @@ int main (int argc, char ** argv)
 #endif // ALLOW_FFTW
 
   // Write initial conditions if not restarting the simulation
-  if (!writeModelState (t,n_saves,uu,vv,hh,bb,pi,outdir))
+  if (!writeModelState (t,n_saves,uu,vv,hh,bb,pi,wdia,outdir))
   {
     fprintf(stderr,"Unable to write model initial state");
     printUsage();
@@ -6640,7 +6936,9 @@ int main (int argc, char ** argv)
           hv_avg[k][i][j] = 0;
           huu_avg[k][i][j] = 0;
           hvv_avg[k][i][j] = 0;
+          wdia_avg[k][i][j] = 0;
         }
+        wdia_avg[Nlay][i][j] = 0;
         pi_avg[i][j] = 0;
       }
     }
@@ -6707,7 +7005,7 @@ int main (int argc, char ** argv)
     }
   }
   
-  // If we are calculating averaged u-momentum output then initialize averaging arrays to zero
+  // If we are calculating averaged thickness equation output then initialize averaging arrays to zero
   if (dt_avg_h > 0)
   {
 #pragma parallel
@@ -6719,6 +7017,31 @@ int main (int argc, char ** argv)
         {
           h_tend_adv[k][i][j] = 0;
           h_tend_relax[k][i][j] = 0;
+        }
+      }
+    }
+  }
+  
+  // If we are calculating averaged energy budget diagnostics then initialize averaging arrays to zero
+  if (dt_avg_e > 0)
+  {
+#pragma parallel
+    for (i = 0; i < Nx; i ++)
+    {
+      for (j = 0; j < Ny; j ++)
+      {
+        for (k = 0; k < Nlay; k ++)
+        {
+          e_uPflux[k][i][j] = 0;
+          e_uKEflux[k][i][j] = 0;
+          e_uPEflux[k][i][j] = 0;
+          e_vPflux[k][i][j] = 0;
+          e_vKEflux[k][i][j] = 0;
+          e_vPEflux[k][i][j] = 0;
+          e_windWork[k][i][j] = 0;
+          e_fricDiss[k][i][j] = 0;
+          e_viscDiss[k][i][j] = 0;
+          e_diaProd[k][i][j] = 0;
         }
       }
     }
@@ -6967,7 +7290,8 @@ int main (int argc, char ** argv)
       // Write out the most recent model state.
       // An older version of the code used interpolation between time steps. In this version we
       // avoid doing this because it breaks conservation properties in the model state.
-      if (!writeModelState (t,n_saves,uu_out,vv_out,hh_out,bb_out,pi,outdir))
+      // N.B. This uses the most recently-calculated data in the global variable wdia for the diapycnal velocity
+      if (!writeModelState (t,n_saves,uu_out,vv_out,hh_out,bb_out,pi,wdia,outdir))
       {
         fprintf(stderr,"Unable to write model state");
         printUsage();
@@ -7038,6 +7362,7 @@ int main (int argc, char ** argv)
             udt[k][i][j] = dt*uu_out[k][i][j];
             vdt[k][i][j] = dt*vv_out[k][i][j];
             hdt[k][i][j] = dt*hh_out[k][i][j];
+            wdt[k][i][j] = dt*wdia[k][i][j];
             Mdt[k][i][j] = dt*(pp[i][j] - geff[k] * POW4(h0) / POW3(hh_out[k][i][j]) / 3);
             if (useTracer)
             {
@@ -7056,6 +7381,7 @@ int main (int argc, char ** argv)
             vv_avg[k][i][j] += avg_fac*vdt[k][i][j];
             hh_avg[k][i][j] += avg_fac*hdt[k][i][j];
             MM_avg[k][i][j] += avg_fac*Mdt[k][i][j];
+            wdia_avg[k][i][j] += avg_fac*wdt[k][i][j];
             if (useTracer)
             {
               bb_avg[k][i][j] += avg_fac*bdt[k][i][j];
@@ -7066,6 +7392,10 @@ int main (int argc, char ** argv)
             hvv_avg[k][i][j] += avg_fac*hvvdt[k][i][j];
             huv_avg[k][i][j] += avg_fac*huvdt[k][i][j];
           }
+          
+          // Sea floor diapycnal velocity (typically zero, except in some specific use cases)
+          k = Nlay;
+          wdia_avg[k][i][j] += avg_fac*wdt[k][i][j];
           
           // Surface pressure
           pidt[i][j] = dt*pi[i][j];
@@ -7090,6 +7420,7 @@ int main (int argc, char ** argv)
               vv_avg[k][i][j] /= dt_avg;
               hh_avg[k][i][j] /= dt_avg;
               MM_avg[k][i][j] /= dt_avg;
+              wdia_avg[k][i][j] /= dt_avg;
               if (useTracer)
               {
                 bb_avg[k][i][j] /= dt_avg;
@@ -7101,12 +7432,14 @@ int main (int argc, char ** argv)
               huv_avg[k][i][j] /= dt_avg;
             }
             
+            k = Nlay;
+            wdia_avg[k][i][j] /= dt_avg;
             pi_avg[i][j] /= dt_avg;
           }
         }
         
         // Write averaged variables to output files
-        if (!writeAverageState (t,n_avg,uu_avg,vv_avg,hh_avg,MM_avg,bb_avg,pi_avg,hu_avg,hv_avg,huu_avg,hvv_avg,huv_avg,outdir))
+        if (!writeAverageState (t,n_avg,uu_avg,vv_avg,hh_avg,MM_avg,bb_avg,pi_avg,wdia_avg,hu_avg,hv_avg,huu_avg,hvv_avg,huv_avg,outdir))
         {
           fprintf(stderr,"Unable to write model state");
           printUsage();
@@ -7126,6 +7459,7 @@ int main (int argc, char ** argv)
               vv_avg[k][i][j] = (1-avg_fac)*vdt[k][i][j];
               hh_avg[k][i][j] = (1-avg_fac)*hdt[k][i][j];
               MM_avg[k][i][j] = (1-avg_fac)*Mdt[k][i][j];
+              wdia_avg[k][i][j] = (1-avg_fac)*wdt[k][i][j];
               if (useTracer)
               {
                 bb_avg[k][i][j] = (1-avg_fac)*bdt[k][i][j];
@@ -7137,6 +7471,8 @@ int main (int argc, char ** argv)
               huv_avg[k][i][j] = (1-avg_fac)*huvdt[k][i][j];
             }
             
+            k=Nlay;
+            wdia_avg[k][i][j] = (1-avg_fac)*wdt[k][i][j];
             pi_avg[i][j] = (1-avg_fac)*pidt[i][j];
           }
         }
@@ -7210,6 +7546,27 @@ int main (int argc, char ** argv)
       n_prev_avg_h = n;
       n_avg_h ++;
       t_next_avg_h = n_avg_h*dt_avg_h;
+    }
+    
+    // If we are time-averaging the energy budget diagnostics and have passed a save checkpoint
+    // then write averages to output files and reset averaging buffers
+    if ((dt_avg_e > 0) && (t >= t_next_avg_e))
+    {
+      // Calculate true length of averaging period
+      avg_len_e = (n-n_prev_avg_e)*dt;
+      
+      // Write to files
+      if (!writeEnergyAverages(n_avg_e,outdir))
+      {
+        fprintf(stderr,"Unable to write averaged terms in energy equation");
+        printUsage();
+        return 0;
+      }
+      
+      // Reset parameters for next averaging period
+      n_prev_avg_e = n;
+      n_avg_e ++;
+      t_next_avg_e = n_avg_e*dt_avg_e;
     }
     
     // If the time step has taken us past an E/Z save point (or multiple
