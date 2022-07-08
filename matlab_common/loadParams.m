@@ -48,6 +48,7 @@ end
 [dt_avg_hu dt_avg_hu_found] = readparam(params_file,'savefreqUMom','%lf');
 [dt_avg_hv dt_avg_hv_found] = readparam(params_file,'savefreqVMom','%lf');
 [dt_avg_h dt_avg_h_found] = readparam(params_file,'savefreqThic','%lf');  
+[dt_avg_e dt_avg_e_found] = readparam(params_file,'savefreqEnergy','%lf');  
 [restart restart_found] = readparam(params_file,'restart','%d');
 [n0 n0_found] = readparam(params_file,'startIdx','%u');
 
@@ -116,6 +117,9 @@ end
 if (~dt_avg_h_found)
   dt_avg_h = 0; %%% Defaults to 0 (no average thickness diagnostics)
 end
+if (~dt_avg_e_found)
+  dt_avg_e = 0; %%% Defaults to 0 (no average energy diagnostics)
+end
 
 %%% Number of output files to read
 Nframes = round((endTime-startTime) / dt_s) + 1;
@@ -123,12 +127,14 @@ N_avg = round((endTime-startTime) / dt_avg);
 N_avg_hu = round((endTime-startTime) / dt_avg_hu);
 N_avg_hv = round((endTime-startTime) / dt_avg_hv);
 N_avg_h = round((endTime-startTime) / dt_avg_h);
+N_avg_e = round((endTime-startTime) / dt_avg_e);
 
 %%% Starting output file indices for averaged products
 n0_avg = round(startTime/dt_avg);
 n0_avg_hu = round(startTime/dt_avg_hu);
 n0_avg_hv = round(startTime/dt_avg_hv);
 n0_avg_h = round(startTime/dt_avg_h);
+n0_avg_e = round(startTime/dt_avg_e);
 
 %%% Salmon layer thickness
 [h0 h0_found] = readparam(params_file,'h0','%lf'); 

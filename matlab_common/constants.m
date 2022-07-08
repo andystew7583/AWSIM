@@ -15,6 +15,7 @@ OUTN_V = 'V';
 OUTN_H = 'H';
 OUTN_B = 'B';
 OUTN_PI = 'P';
+OUTN_W = 'W';
 
 %%% Output file name definitions
 OUTN_U_AVG = 'U_avg';
@@ -23,6 +24,7 @@ OUTN_H_AVG = 'H_avg';
 OUTN_M_AVG = 'M_avg';
 OUTN_B_AVG = 'B_avg';
 OUTN_PI_AVG = 'P_avg';
+OUTN_W_AVG = 'W_avg';
 OUTN_HU_AVG = 'HU_avg';
 OUTN_HV_AVG = 'HV_avg';
 OUTN_HUU_AVG = 'HUU_avg';
@@ -68,6 +70,18 @@ OUTN_VMOM_FBARO = 'VMom_baroForcing';
 %%% Thickness equation output filenames
 OUTN_THIC_ADV = 'Thic_advection';
 OUTN_THIC_RELAX = 'Thic_relaxation';
+
+%%% Energy equation output filenames
+OUTN_ENERGY_UPFLUX = 'Energy_uPressureFlux';
+OUTN_ENERGY_UKEFLUX = 'Energy_uKEflux';
+OUTN_ENERGY_UPEFLUX = 'Energy_uPEflux';
+OUTN_ENERGY_VPFLUX = 'Energy_vPressureFlux';
+OUTN_ENERGY_VKEFLUX = 'Energy_vuKEflux';
+OUTN_ENERGY_VPEFLUX = 'Energy_vPEflux';
+OUTN_ENERGY_WINDWORK = 'Energy_windWork';
+OUTN_ENERGY_FRICDISS = 'Energy_frictionalDiss';
+OUTN_ENERGY_VISCDISS = 'Energy_viscousDiss';
+OUTN_ENERGY_DIAPROD = 'Energy_diapycnalProd';
 
 %%% Other file names
 OUTN_TFILE = 'time.txt';

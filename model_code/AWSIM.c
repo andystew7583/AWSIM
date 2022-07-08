@@ -327,18 +327,16 @@ real dt_avg_e = 0;        // Save time step for averaged output
 uint n_prev_avg_e = 0;    // Model time step number corresponding to previous average output
 real t_next_avg_e = 0;    // Next save time for averaged output
 real avg_len_e = 0;       // True length of time average
-real *** e_uPflux[k][i][j] = NULL;
-real *** e_uKEflux[k][i][j] = NULL;
-real *** e_uPEflux[k][i][j] = NULL;
-real *** e_vPflux[k][i][j] = NULL;
-real *** e_vKEflux[k][i][j] = NULL;
-real *** e_vPEflux[k][i][j] = NULL;
-real *** e_windWork[k][i][j] = NULL;
-real *** e_fricDiss[k][i][j] = NULL;
-real *** e_viscDiss[k][i][j] = NULL;
-real *** e_diaProd[k][i][j] = NULL;
-real ** e_pres = NULL;
-real ** E_KE = NULL;
+real *** e_uPflux = NULL;
+real *** e_uKEflux = NULL;
+real *** e_uPEflux = NULL;
+real *** e_vPflux = NULL;
+real *** e_vKEflux = NULL;
+real *** e_vPEflux = NULL;
+real *** e_windWork = NULL;
+real *** e_fricDiss = NULL;
+real *** e_viscDiss = NULL;
+real *** e_diaProd = NULL;
 
 // Time-stepping method to use
 uint timeSteppingScheme = TIMESTEPPING_AB3;
@@ -1975,6 +1973,9 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
   real nflt;
   int nm1, np1;
   
+  // Used for energy diagnostics
+  real pres_0, pres_im1, pres_jm1;
+  
   
   
   
@@ -3183,6 +3184,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             hv_tend_A2[k][i][j] += avg_fac_hv*rhs_v*dt;
           }
+          if (dt_avg_e > 0)
+          {
+            e_viscDiss[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+          }
         }
         
         // Add biharmonic viscosity
@@ -3197,6 +3202,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             hv_tend_A4[k][i][j] += avg_fac_hv*rhs_v*dt;
           }
+          e_viscDiss[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
         }
         
         // Add wind stress
@@ -3234,6 +3240,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             hv_tend_rDrag[k][i][j] += avg_fac_hv*rhs_v*dt;
           }
+          if (dt_avg_e > 0)
+          {
+            e_fricDiss[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+          }
         }
         
         // Add linear surface drag
@@ -3244,6 +3254,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (dt_avg_hv > 0)
           {
             hv_tend_rSurf[k][i][j] += avg_fac_hv*rhs_v*dt;
+          }
+          if (dt_avg_e > 0)
+          {
+            e_windWork[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3256,6 +3270,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             hv_tend_CdBot[k][i][j] += avg_fac_hv*rhs_v*dt;
           }
+          if (dt_avg_e > 0)
+          {
+            e_fricDiss[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+          }
         }
         
         // Add quadratic surface drag
@@ -3266,6 +3284,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (dt_avg_hv > 0)
           {
             hv_tend_CdSurf[k][i][j] += avg_fac_hv*rhs_v*dt;
+          }
+          if (dt_avg_e > 0)
+          {
+            e_windWork[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3330,13 +3352,12 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           pres_0 = pp[i0][j0] - geff[k]*0.5*(eta_w[k][i0][j0]+eta_w[k+1][i0][j0]);
           pres_im1 = pp[im1][j0] - geff[k]*0.5*(eta_w[k][im1][j0]+eta_w[k+1][im1][j0]);
           pres_jm1 = pp[i0][jm1] - geff[k]*0.5*(eta_w[k][i0][jm1]+eta_w[k+1][i0][jm1]);
-          e_uPflux = [k][i][j] += h_west[k][i0][j0] * 0.5*(KE_B[i0][j0]+KE_B[im1][j0]) * avg_fac_e*dt;
           e_uPflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*(pres_0+pres_im1) * avg_fac_e*dt;
           e_vPflux[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*(pres_0+pres_jm1) * avg_fac_e*dt;
           
           // PE flux
-          e_uPflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*((MM_B[i0][j0]-pres_0)+(MM_B[im1][j0]-pres_im1)) * avg_fac_e*dt;
-          e_vPflux[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*((MM_B[i0][j0]-pres_0)+(MM_B[i0][jm1]-pres_jm1)) * avg_fac_e*dt;
+          e_uPEflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*((MM_B[i0][j0]-pres_0)+(MM_B[im1][j0]-pres_im1)) * avg_fac_e*dt;
+          e_vPEflux[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*((MM_B[i0][j0]-pres_0)+(MM_B[i0][jm1]-pres_jm1)) * avg_fac_e*dt;
           
           // KE flux
           e_uKEflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*(KE_B[i0][j0]+KE_B[im1][j0]) * avg_fac_e*dt;
@@ -4008,19 +4029,35 @@ void constructOutputName (char * outdir, int varid, int k, uint n, char * outfil
     }
       
     // Energy equation diagnostics
-    case VARID_ENERGY_PFLUX:
+    case VARID_ENERGY_UPFLUX:
     {
-      strcat(outfile,OUTN_ENERGY_PFLUX);
+      strcat(outfile,OUTN_ENERGY_UPFLUX);
       break;
     }
-    case VARID_ENERGY_KEFLUX:
+    case VARID_ENERGY_UKEFLUX:
     {
-      strcat(outfile,OUTN_ENERGY_KEFLUX);
+      strcat(outfile,OUTN_ENERGY_UKEFLUX);
       break;
     }
-    case VARID_ENERGY_PEFLUX:
+    case VARID_ENERGY_UPEFLUX:
     {
-      strcat(outfile,OUTN_ENERGY_PEFLUX);
+      strcat(outfile,OUTN_ENERGY_UPEFLUX);
+      break;
+    }
+    // Energy equation diagnostics
+    case VARID_ENERGY_VPFLUX:
+    {
+      strcat(outfile,OUTN_ENERGY_VPFLUX);
+      break;
+    }
+    case VARID_ENERGY_VKEFLUX:
+    {
+      strcat(outfile,OUTN_ENERGY_VKEFLUX);
+      break;
+    }
+    case VARID_ENERGY_VPEFLUX:
+    {
+      strcat(outfile,OUTN_ENERGY_VPEFLUX);
       break;
     }
     case VARID_ENERGY_WINDWORK:
@@ -4033,9 +4070,9 @@ void constructOutputName (char * outdir, int varid, int k, uint n, char * outfil
       strcat(outfile,OUTN_ENERGY_FRICDISS);
       break;
     }
-    case VARID_ENERGY_DIAPROD:
+    case VARID_ENERGY_VISCDISS:
     {
-      strcat(outfile,OUTN_ENERGY_DIAPROD);
+      strcat(outfile,OUTN_ENERGY_VISCDISS);
       break;
     }
     case VARID_ENERGY_DIAPROD:
@@ -4717,8 +4754,8 @@ void printUsage()
      "  savefreqEnergy      Frequency of averaged diagnostics of energy budget terms,\n"
      "                      in units of time. For values <=0 no averaged products will be\n"
      "                      calculated. Optional - default is 0. N.B. The energy\n"
-     "                      diagnostics neglect barotropic forcing and horizontal buoyancy\n"
-     "                      effects.\n"
+     "                      diagnostics neglect barotropic forcing, horizontal buoyancy\n"
+     "                      effects and random forcing.\n"
      "  savefreqEZ          Storage frequency for energy and potential\n"
      "                      enstrophy, in units of time.\n"
      "                      Negative or zero values disable this diagnostic.\n"
@@ -5840,9 +5877,9 @@ int main (int argc, char ** argv)
   }
   
   // Diabatic velocity
+  MATALLOC3(wdia,Nlay+1,Nx,Ny);
   if (useWDia)
   {
-    MATALLOC3(wdia,Nlay+1,Nx,Ny);
     MATALLOC3(wdia_u,Nlay+1,Nx,Ny);
     MATALLOC3(wdia_v,Nlay+1,Nx,Ny);
     MATALLOC4(wdia_ff,wDiaNrecs,Nlay+1,Nx,Ny);
@@ -6590,7 +6627,7 @@ int main (int argc, char ** argv)
   }
   
 #pragma parallel
-  
+    
   // Initialize diapycnal velocity to zero - it will be set in tderiv
   for (i = 0; i < Nx; i ++)
   {
