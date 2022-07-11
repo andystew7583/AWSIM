@@ -3356,8 +3356,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           e_vPflux[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*(pres_0+pres_jm1) * avg_fac_e*dt;
           
           // PE flux
-          e_uPEflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*((MM_B[i0][j0]-pres_0)+(MM_B[im1][j0]-pres_im1)) * avg_fac_e*dt;
-          e_vPEflux[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*((MM_B[i0][j0]-pres_0)+(MM_B[i0][jm1]-pres_jm1)) * avg_fac_e*dt;
+          //e_uPEflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*((MM_B[i0][j0]-pres_0)+(MM_B[im1][j0]-pres_im1)) * avg_fac_e*dt;
+          //e_vPEflux[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*((MM_B[i0][j0]-pres_0)+(MM_B[i0][jm1]-pres_jm1)) * avg_fac_e*dt;
+          e_uPEflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*(MM_B[i0][j0]+MM_B[im1][j0]) * avg_fac_e*dt;
+          e_vPEflux[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*(MM_B[i0][j0]+MM_B[i0][jm1]) * avg_fac_e*dt;
           
           // KE flux
           e_uKEflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*(KE_B[i0][j0]+KE_B[im1][j0]) * avg_fac_e*dt;
