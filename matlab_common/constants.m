@@ -78,10 +78,20 @@ OUTN_ENERGY_UPEFLUX = 'Energy_uPEflux';
 OUTN_ENERGY_VPFLUX = 'Energy_vPressureFlux';
 OUTN_ENERGY_VKEFLUX = 'Energy_vKEflux';
 OUTN_ENERGY_VPEFLUX = 'Energy_vPEflux';
-OUTN_ENERGY_WINDWORK = 'Energy_windWork';
-OUTN_ENERGY_FRICDISS = 'Energy_frictionalDiss';
-OUTN_ENERGY_VISCDISS = 'Energy_viscousDiss';
-OUTN_ENERGY_DIAPROD = 'Energy_diapycnalProd';
+OUTN_ENERGY_ADV = 'Energy_advection';
+OUTN_ENERGY_GRADM = 'Energy_Montgomery';
+OUTN_ENERGY_WIND = 'Energy_windStress';
+OUTN_ENERGY_RDRAG = 'Energy_linBotDrag';
+OUTN_ENERGY_RSURF = 'Energy_linSurfDrag';
+OUTN_ENERGY_CDBOT = 'Energy_quadBotDrag';
+OUTN_ENERGY_CDSURF = 'Energy_quadSurfDrag';
+OUTN_ENERGY_A2 = 'Energy_viscosity';
+OUTN_ENERGY_A4 = 'Energy_hypervisc';
+OUTN_ENERGY_WDIA = 'Energy_diapycnal';
+OUTN_ENERGY_FBARO = 'Energy_baroForcing';
+OUTN_ENERGY_BUOY = 'Energy_buoyForce';
+OUTN_ENERGY_RAND = 'Energy_randomForcing';
+OUTN_ENERGY_RELAX = 'Energy_relaxation';
 
 %%% Other file names
 OUTN_TFILE = 'time.txt';

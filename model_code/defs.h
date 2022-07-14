@@ -164,10 +164,21 @@
 #define VARID_ENERGY_VPFLUX 83
 #define VARID_ENERGY_VKEFLUX 84
 #define VARID_ENERGY_VPEFLUX 85
-#define VARID_ENERGY_WINDWORK 86
-#define VARID_ENERGY_FRICDISS 87
-#define VARID_ENERGY_VISCDISS 88
-#define VARID_ENERGY_DIAPROD 89
+#define VARID_ENERGY_ADV 86
+#define VARID_ENERGY_GRADM 87
+#define VARID_ENERGY_WIND 88
+#define VARID_ENERGY_RDRAG 89
+#define VARID_ENERGY_RSURF 90
+#define VARID_ENERGY_CDBOT 91
+#define VARID_ENERGY_CDSURF 92
+#define VARID_ENERGY_A2 93
+#define VARID_ENERGY_A4 94
+#define VARID_ENERGY_WDIAPE 95
+#define VARID_ENERGY_WDIAKE 96
+#define VARID_ENERGY_FBARO 97
+#define VARID_ENERGY_BUOY 98
+#define VARID_ENERGY_RAND 99
+#define VARID_ENERGY_RELAX 100
 
 
 // Output filenames
@@ -239,10 +250,21 @@ static const char OUTN_ENERGY_UPEFLUX[] = "Energy_uPEflux";
 static const char OUTN_ENERGY_VPFLUX[] = "Energy_vPressureFlux";
 static const char OUTN_ENERGY_VKEFLUX[] = "Energy_vKEflux";
 static const char OUTN_ENERGY_VPEFLUX[] = "Energy_vPEflux";
-static const char OUTN_ENERGY_WINDWORK[] = "Energy_windWork";
-static const char OUTN_ENERGY_FRICDISS[] = "Energy_frictionalDiss";
-static const char OUTN_ENERGY_VISCDISS[] = "Energy_viscousDiss";
-static const char OUTN_ENERGY_DIAPROD[] = "Energy_diapycnalProd";
+static const char OUTN_ENERGY_ADV[] = "Energy_advection";
+static const char OUTN_ENERGY_GRADM[] = "Energy_Montgomery";
+static const char OUTN_ENERGY_WIND[] = "Energy_windStress";
+static const char OUTN_ENERGY_RDRAG[] = "Energy_linBotDrag";
+static const char OUTN_ENERGY_RSURF[] = "Energy_linSurfDrag";
+static const char OUTN_ENERGY_CDBOT[] = "Energy_quadBotDrag";
+static const char OUTN_ENERGY_CDSURF[] = "Energy_quadSurfDrag";
+static const char OUTN_ENERGY_A2[] = "Energy_viscosity";
+static const char OUTN_ENERGY_A4[] = "Energy_hypervisc";
+static const char OUTN_ENERGY_WDIAPE[] = "Energy_diaProd";
+static const char OUTN_ENERGY_WDIAKE[] = "Energy_diaAdv";
+static const char OUTN_ENERGY_FBARO[] = "Energy_baroForcing";
+static const char OUTN_ENERGY_BUOY[] = "Energy_buoyForce";
+static const char OUTN_ENERGY_RAND[] = "Energy_randomForcing";
+static const char OUTN_ENERGY_RELAX[] = "Energy_relaxation";
 
 // Time tracking file and energy/enstrophy diagnostics file
 static const char TFILE[] = "time.txt";

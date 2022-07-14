@@ -327,16 +327,27 @@ real dt_avg_e = 0;        // Save time step for averaged output
 uint n_prev_avg_e = 0;    // Model time step number corresponding to previous average output
 real t_next_avg_e = 0;    // Next save time for averaged output
 real avg_len_e = 0;       // True length of time average
-real *** e_uPflux = NULL;
-real *** e_uKEflux = NULL;
-real *** e_uPEflux = NULL;
-real *** e_vPflux = NULL;
-real *** e_vKEflux = NULL;
-real *** e_vPEflux = NULL;
-real *** e_windWork = NULL;
-real *** e_fricDiss = NULL;
-real *** e_viscDiss = NULL;
-real *** e_diaProd = NULL;
+real *** e_flux_uP = NULL;
+real *** e_flux_uKE = NULL;
+real *** e_flux_uPE = NULL;
+real *** e_flux_vP = NULL;
+real *** e_flux_vKE = NULL;
+real *** e_flux_vPE = NULL;
+real *** e_tend_adv = NULL;
+real *** e_tend_gradM = NULL;
+real *** e_tend_wind = NULL;
+real *** e_tend_rDrag = NULL;
+real *** e_tend_rSurf = NULL;
+real *** e_tend_CdBot = NULL;
+real *** e_tend_CdSurf = NULL;
+real *** e_tend_A2 = NULL;
+real *** e_tend_A4 = NULL;
+real *** e_tend_wdiaPE = NULL;
+real *** e_tend_wdiaKE = NULL;
+real *** e_tend_Fbaro = NULL;
+real *** e_tend_buoy = NULL;
+real *** e_tend_rand = NULL;
+real *** e_tend_relax = NULL;
 
 // Time-stepping method to use
 uint timeSteppingScheme = TIMESTEPPING_AB3;
@@ -2823,6 +2834,12 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           hv_tend_dhdt[k][i][j] += 0.5 * vv_w[k][i0][j0]*avg_fac_hv*rhs_h*dt;
           hv_tend_dhdt[k][i][(j+Ny+1) % Ny] += 0.5 * vv_w[k][i0][jp1]*avg_fac_hv*rhs_h*dt;
         }
+        // Also contributes to the KE tendency
+        // N.B. This formulation ignores grid point locations
+        if (dt_avg_e > 0)
+        {
+          e_tend_adv[k][i][j] += 0.5*(SQUARE(uu_w[k][i0][j0])+SQUARE(vv_w[k][i0][j0]))*rhs_h*avg_fac_e*dt;
+        }
         
         // Add diabatic velocity terms. Negative values mean no relaxation.
         if (useWDia)
@@ -2835,6 +2852,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             h_tend_relax[k][i][j] += avg_fac_h*rhs_h*dt;
           }
+          
           // Need to add h tendency to hu and hv tendencies
           // NOTE: This formulation assumes centered averaging of h to u and v points
           if (dt_avg_hu > 0)
@@ -2848,10 +2866,13 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             hv_tend_wdia[k][i][(j+Ny+1) % Ny] += 0.5 * vv_w[k][i0][jp1]*avg_fac_hv*rhs_h*dt;
           }
           
-          // Calculate energy tendency due to diapycnal fluxes
+          // Calculate energy tendencies due to diapycnal fluxes
           if (dt_avg_e > 0)
           {
-            e_diaProd[k][i][j] += - geff[k]*(eta_w[k][i0][j0]*wdia[k][i0][j0]-eta_w[k+1][i0][j0]*wdia[k+1][i0][j0])*avg_fac_e*dt
+            // N.B. This formulation ignores grid point locations
+            e_tend_wdiaKE[k][i][j] += 0.5*(SQUARE(uu_w[k][i0][j0])+SQUARE(vv_w[k][i0][j0]))*rhs_h*avg_fac_e*dt;
+            
+            e_tend_wdiaPE[k][i][j] += - geff[k]*(eta_w[k][i0][j0]*wdia[k][i0][j0]-eta_w[k+1][i0][j0]*wdia[k+1][i0][j0])*avg_fac_e*dt
                                   - (-geff[k]*POW4(h0)/POW3(hh_w[k][i][j])/3) * (-rhs_h) * avg_fac_e*dt;
           }
         }
@@ -2870,6 +2891,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         {
           hu_tend_gradM[k][i][j] += h_west[k][i0][j0] * avg_fac_hu*rhs_u*dt;
         }
+        if (dt_avg_e > 0)
+        {
+          e_tend_gradM[k][i][j] += rhs_u*h_west[k][i0][j0]*uu_w[k][i0][j0]*avg_fac_e*dt;
+        }
         
         // Gradient of kinetic energy
         rhs_u = - (KE_B[i0][j0]-KE_B[im1][j0]) / dx;
@@ -2877,6 +2902,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         if (dt_avg_hu > 0)
         {
           hu_tend_gradKE[k][i][j] += h_west[k][i0][j0] * avg_fac_hu*rhs_u*dt;
+        }
+        if (dt_avg_e > 0)
+        {
+          e_tend_adv[k][i][j] += rhs_u*h_west[k][i0][j0]*uu_w[k][i0][j0]*avg_fac_e*dt;
         }
         
         // Add Coriolis/vorticity advection terms
@@ -2910,6 +2939,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         {
           hu_tend_q[k][i][j] += h_west[k][i0][j0] * avg_fac_hu*rhs_u*dt;
         }
+        if (dt_avg_e > 0)
+        {
+          e_tend_adv[k][i][j] += rhs_u*h_west[k][i0][j0]*uu_w[k][i0][j0]*avg_fac_e*dt;
+        }
         
         // Add diabatic advection
         if (useWDia)
@@ -2923,6 +2956,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (dt_avg_hu > 0)
           {
             hu_tend_wdia[k][i][j] += avg_fac_hu*rhs_u*dt;
+          }
+          if (dt_avg_e > 0)
+          {
+            e_tend_wdiaKE[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -2940,7 +2977,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
           if (dt_avg_e > 0)
           {
-            e_viscDiss[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_A2[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
 
@@ -2958,7 +2995,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
           if (dt_avg_e > 0)
           {
-            e_viscDiss[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_A4[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -2974,7 +3011,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
           if (dt_avg_e > 0)
           {
-            e_windWork[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_wind[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -2987,6 +3024,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (dt_avg_hu > 0)
           {
             hu_tend_Fbaro[k][i][j] += h_west[k][i0][j0] * avg_fac_hu*rhs_u*dt;
+          }
+          if (dt_avg_e > 0)
+          {
+            e_tend_Fbaro[k][i][j] += rhs_u*h_west[k][i0][j0]*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3001,7 +3042,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
           if (dt_avg_e > 0)
           {
-            e_fricDiss[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_rDrag[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3016,7 +3057,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
           if (dt_avg_e > 0)
           {
-            e_windWork[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_rSurf[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3031,7 +3072,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
           if (dt_avg_e > 0)
           {
-            e_fricDiss[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_CdBot[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3046,7 +3087,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
           if (dt_avg_e > 0)
           {
-            e_windWork[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_CdSurf[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3058,6 +3099,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (dt_avg_hu > 0)
           {
             hu_tend_buoy[k][i][j] += avg_fac_hu*rhs_u*dt;
+          }
+          if (dt_avg_e > 0)
+          {
+            e_tend_buoy[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3076,6 +3121,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             {
               hu_tend_rand[k][i][j] += avg_fac_hu*rhs_u*dt;
             }
+            if (dt_avg_e > 0)
+            {
+              e_tend_rand[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
+            }
           }
           else
           {
@@ -3083,6 +3132,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             if (dt_avg_hu > 0)
             {
               hu_tend_rand[k][i][j] += h_west[k][i0][j0] * avg_fac_hu*rhs_u*dt;
+            }
+            if (dt_avg_e > 0)
+            {
+              e_tend_rand[k][i][j] += rhs_u*h_west[k][i0][j0]*uu_w[k][i0][j0]*avg_fac_e*dt;
             }
           }
         }
@@ -3097,6 +3150,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (dt_avg_hu > 0)
           {
             hu_tend_relax[k][i][j] += h_west[k][i0][j0] * avg_fac_hu*rhs_u*dt;
+          }
+          if (dt_avg_e > 0)
+          {
+            e_tend_relax[k][i][j] += rhs_u*h_west[k][i0][j0]*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3116,6 +3173,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         {
           hv_tend_gradM[k][i][j] += h_south[k][i0][j0] * avg_fac_hv*rhs_v*dt;
         }
+        if (dt_avg_e > 0)
+        {
+          e_tend_gradM[k][i][j] += rhs_v*h_south[k][i0][j0]*vv_w[k][i0][j0]*avg_fac_e*dt;
+        }
         
         // Gradient of kinetic energy
         rhs_v = - (KE_B[i0][j0]-KE_B[i0][jm1]) / dy;
@@ -3123,6 +3184,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         if (dt_avg_hv > 0)
         {
           hv_tend_gradKE[k][i][j] += h_south[k][i0][j0] * avg_fac_hv*rhs_v*dt;
+        }
+        if (dt_avg_e > 0)
+        {
+          e_tend_adv[k][i][j] += rhs_v*h_south[k][i0][j0]*vv_w[k][i0][j0]*avg_fac_e*dt;
         }
         
         // Add Coriolis/vorticity advection terms
@@ -3156,6 +3221,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         {
           hv_tend_q[k][i][j] += h_south[k][i0][j0] * avg_fac_hv*rhs_v*dt;
         }
+        if (dt_avg_e > 0)
+        {
+          e_tend_adv[k][i][j] += rhs_v*h_south[k][i0][j0]*vv_w[k][i0][j0]*avg_fac_e*dt;
+        }
         
         // Add diabatic advection
         if (useWDia)
@@ -3169,6 +3238,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (dt_avg_hv > 0)
           {
             hv_tend_wdia[k][i][j] += avg_fac_hv*rhs_v*dt;
+          }
+          if (dt_avg_e > 0)
+          {
+            e_tend_wdiaKE[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3186,7 +3259,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
           if (dt_avg_e > 0)
           {
-            e_viscDiss[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_A2[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3202,7 +3275,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             hv_tend_A4[k][i][j] += avg_fac_hv*rhs_v*dt;
           }
-          e_viscDiss[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+          if (dt_avg_e > 0)
+          {
+            e_tend_A4[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+          }
         }
         
         // Add wind stress
@@ -3216,7 +3292,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
           if (dt_avg_e > 0)
           {
-            e_windWork[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_wind[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3228,6 +3304,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (dt_avg_hv > 0)
           {
             hv_tend_Fbaro[k][i][j] += h_south[k][i0][j0] * avg_fac_hv*rhs_v*dt;
+          }
+          if (dt_avg_e > 0)
+          {
+            e_tend_Fbaro[k][i][j] += rhs_v*h_south[k][i0][j0]*vv_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3242,7 +3322,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
           if (dt_avg_e > 0)
           {
-            e_fricDiss[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_rDrag[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3257,7 +3337,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
           if (dt_avg_e > 0)
           {
-            e_windWork[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_rSurf[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3272,7 +3352,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
           if (dt_avg_e > 0)
           {
-            e_fricDiss[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_CdBot[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3287,7 +3367,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
           if (dt_avg_e > 0)
           {
-            e_windWork[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_CdSurf[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3299,6 +3379,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (dt_avg_hv > 0)
           {
             hv_tend_buoy[k][i][j] += avg_fac_hv*rhs_v*dt;
+          }
+          if (dt_avg_e > 0)
+          {
+            e_tend_buoy[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3317,6 +3401,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             {
               hv_tend_rand[k][i][j] += avg_fac_hv*rhs_v*dt;
             }
+            if (dt_avg_e > 0)
+            {
+              e_tend_rand[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+            }
           }
           else
           {
@@ -3324,6 +3412,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             if (dt_avg_hv > 0)
             {
               hv_tend_rand[k][i][j] += h_south[k][i0][j0] * avg_fac_hv*rhs_v*dt;
+            }
+            if (dt_avg_e > 0)
+            {
+              e_tend_rand[k][i][j] += rhs_v*h_south[k][i0][j0]*vv_w[k][i0][j0]*avg_fac_e*dt;
             }
           }
         }
@@ -3339,6 +3431,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             hv_tend_relax[k][i][j] += h_south[k][i0][j0] * avg_fac_hv*rhs_v*dt;
           }
+          if (dt_avg_e > 0)
+          {
+            e_tend_relax[k][i][j] += rhs_v*h_south[k][i0][j0]*vv_w[k][i0][j0]*avg_fac_e*dt;
+          }
         }
         
         
@@ -3352,18 +3448,18 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           pres_0 = pp[i0][j0] - geff[k]*0.5*(eta_w[k][i0][j0]+eta_w[k+1][i0][j0]);
           pres_im1 = pp[im1][j0] - geff[k]*0.5*(eta_w[k][im1][j0]+eta_w[k+1][im1][j0]);
           pres_jm1 = pp[i0][jm1] - geff[k]*0.5*(eta_w[k][i0][jm1]+eta_w[k+1][i0][jm1]);
-          e_uPflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*(pres_0+pres_im1) * avg_fac_e*dt;
-          e_vPflux[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*(pres_0+pres_jm1) * avg_fac_e*dt;
+          e_flux_uP[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*(pres_0+pres_im1) * avg_fac_e*dt;
+          e_flux_vP[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*(pres_0+pres_jm1) * avg_fac_e*dt;
           
           // PE flux
-          e_uPEflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*((MM_B[i0][j0]-pres_0)+(MM_B[im1][j0]-pres_im1)) * avg_fac_e*dt;
-          e_vPEflux[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*((MM_B[i0][j0]-pres_0)+(MM_B[i0][jm1]-pres_jm1)) * avg_fac_e*dt;
-          //e_uPEflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*(MM_B[i0][j0]+MM_B[im1][j0]) * avg_fac_e*dt;
-          //e_vPEflux[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*(MM_B[i0][j0]+MM_B[i0][jm1]) * avg_fac_e*dt;
+          e_flux_uPE[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*((MM_B[i0][j0]-pres_0)+(MM_B[im1][j0]-pres_im1)) * avg_fac_e*dt;
+          e_flux_vPE[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*((MM_B[i0][j0]-pres_0)+(MM_B[i0][jm1]-pres_jm1)) * avg_fac_e*dt;
+          //e_flux_uPE[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*(MM_B[i0][j0]+MM_B[im1][j0]) * avg_fac_e*dt;
+          //e_flux_vPE[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*(MM_B[i0][j0]+MM_B[i0][jm1]) * avg_fac_e*dt;
           
           // KE flux
-          e_uKEflux[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*(KE_B[i0][j0]+KE_B[im1][j0]) * avg_fac_e*dt;
-          e_vKEflux[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*(KE_B[i0][j0]+KE_B[i0][jm1]) * avg_fac_e*dt;
+          e_flux_uKE[k][i][j] += h_west[k][i0][j0] * uu_w[k][i0][j0] * 0.5*(KE_B[i0][j0]+KE_B[im1][j0]) * avg_fac_e*dt;
+          e_flux_vKE[k][i][j] += h_south[k][i0][j0] * vv_w[k][i0][j0]  * 0.5*(KE_B[i0][j0]+KE_B[i0][jm1]) * avg_fac_e*dt;
         }
         
         
@@ -4046,7 +4142,6 @@ void constructOutputName (char * outdir, int varid, int k, uint n, char * outfil
       strcat(outfile,OUTN_ENERGY_UPEFLUX);
       break;
     }
-    // Energy equation diagnostics
     case VARID_ENERGY_VPFLUX:
     {
       strcat(outfile,OUTN_ENERGY_VPFLUX);
@@ -4062,24 +4157,79 @@ void constructOutputName (char * outdir, int varid, int k, uint n, char * outfil
       strcat(outfile,OUTN_ENERGY_VPEFLUX);
       break;
     }
-    case VARID_ENERGY_WINDWORK:
+    case VARID_ENERGY_ADV:
     {
-      strcat(outfile,OUTN_ENERGY_WINDWORK);
+      strcat(outfile,OUTN_ENERGY_ADV);
       break;
     }
-    case VARID_ENERGY_FRICDISS:
+    case VARID_ENERGY_GRADM:
     {
-      strcat(outfile,OUTN_ENERGY_FRICDISS);
+      strcat(outfile,OUTN_ENERGY_GRADM);
       break;
     }
-    case VARID_ENERGY_VISCDISS:
+    case VARID_ENERGY_WIND:
     {
-      strcat(outfile,OUTN_ENERGY_VISCDISS);
+      strcat(outfile,OUTN_ENERGY_WIND);
       break;
     }
-    case VARID_ENERGY_DIAPROD:
+    case VARID_ENERGY_RDRAG:
     {
-      strcat(outfile,OUTN_ENERGY_DIAPROD);
+      strcat(outfile,OUTN_ENERGY_RDRAG);
+      break;
+    }
+    case VARID_ENERGY_RSURF:
+    {
+      strcat(outfile,OUTN_ENERGY_RSURF);
+      break;
+    }
+    case VARID_ENERGY_CDBOT:
+    {
+      strcat(outfile,OUTN_ENERGY_CDBOT);
+      break;
+    }
+    case VARID_ENERGY_CDSURF:
+    {
+      strcat(outfile,OUTN_ENERGY_CDSURF);
+      break;
+    }
+    case VARID_ENERGY_A2:
+    {
+      strcat(outfile,OUTN_ENERGY_A2);
+      break;
+    }
+    case VARID_ENERGY_A4:
+    {
+      strcat(outfile,OUTN_ENERGY_A4);
+      break;
+    }
+    case VARID_ENERGY_WDIAPE:
+    {
+      strcat(outfile,OUTN_ENERGY_WDIAPE);
+      break;
+    }
+    case VARID_ENERGY_WDIAKE:
+    {
+      strcat(outfile,OUTN_ENERGY_WDIAKE);
+      break;
+    }
+    case VARID_ENERGY_FBARO:
+    {
+      strcat(outfile,OUTN_ENERGY_FBARO);
+      break;
+    }
+    case VARID_ENERGY_BUOY:
+    {
+      strcat(outfile,OUTN_ENERGY_BUOY);
+      break;
+    }
+    case VARID_ENERGY_RAND:
+    {
+      strcat(outfile,OUTN_ENERGY_RAND);
+      break;
+    }
+    case VARID_ENERGY_RELAX:
+    {
+      strcat(outfile,OUTN_ENERGY_RELAX);
       break;
     }
       
@@ -4623,16 +4773,27 @@ mybool writeEnergyAverages (uint n, char * outdir)
     {
       for (k = 0; k < Nlay; k ++)
       {
-        e_uPflux[k][i][j] /= avg_len_e;
-        e_uKEflux[k][i][j] /= avg_len_e;
-        e_uPEflux[k][i][j] /= avg_len_e;
-        e_vPflux[k][i][j] /= avg_len_e;
-        e_vKEflux[k][i][j] /= avg_len_e;
-        e_vPEflux[k][i][j] /= avg_len_e;
-        e_windWork[k][i][j] /= avg_len_e;
-        e_fricDiss[k][i][j] /= avg_len_e;
-        e_viscDiss[k][i][j] /= avg_len_e;
-        e_diaProd[k][i][j] /= avg_len_e;
+        e_flux_uP[k][i][j] /= avg_len_e;
+        e_flux_uKE[k][i][j] /= avg_len_e;
+        e_flux_uPE[k][i][j] /= avg_len_e;
+        e_flux_vP[k][i][j] /= avg_len_e;
+        e_flux_vKE[k][i][j] /= avg_len_e;
+        e_flux_vPE[k][i][j] /= avg_len_e;
+        e_tend_adv[k][i][j] /= avg_len_e;
+        e_tend_gradM[k][i][j] /= avg_len_e;
+        e_tend_wind[k][i][j] /= avg_len_e;
+        e_tend_rDrag[k][i][j] /= avg_len_e;
+        e_tend_rSurf[k][i][j] /= avg_len_e;
+        e_tend_CdBot[k][i][j] /= avg_len_e;
+        e_tend_CdSurf[k][i][j] /= avg_len_e;
+        e_tend_A2[k][i][j] /= avg_len_e;
+        e_tend_A4[k][i][j] /= avg_len_e;
+        e_tend_wdiaPE[k][i][j] /= avg_len_e;
+        e_tend_wdiaKE[k][i][j] /= avg_len_e;
+        e_tend_Fbaro[k][i][j] /= avg_len_e;
+        e_tend_buoy[k][i][j] /= avg_len_e;
+        e_tend_rand[k][i][j] /= avg_len_e;
+        e_tend_relax[k][i][j] /= avg_len_e;
       }
     }
   }
@@ -4641,25 +4802,47 @@ mybool writeEnergyAverages (uint n, char * outdir)
   for (k = 0; k < Nlay; k ++)
   {
     constructOutputName(outdir,VARID_ENERGY_UPFLUX,k,n,outfile);
-    if (!writeOutputFile(outfile,e_uPflux[k],Nx,Ny)) return false;
+    if (!writeOutputFile(outfile,e_flux_uP[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_ENERGY_UKEFLUX,k,n,outfile);
-    if (!writeOutputFile(outfile,e_uKEflux[k],Nx,Ny)) return false;
+    if (!writeOutputFile(outfile,e_flux_uKE[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_ENERGY_UPEFLUX,k,n,outfile);
-    if (!writeOutputFile(outfile,e_uPEflux[k],Nx,Ny)) return false;
+    if (!writeOutputFile(outfile,e_flux_uPE[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_ENERGY_VPFLUX,k,n,outfile);
-    if (!writeOutputFile(outfile,e_vPflux[k],Nx,Ny)) return false;
+    if (!writeOutputFile(outfile,e_flux_vP[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_ENERGY_VKEFLUX,k,n,outfile);
-    if (!writeOutputFile(outfile,e_vKEflux[k],Nx,Ny)) return false;
+    if (!writeOutputFile(outfile,e_flux_vKE[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_ENERGY_VPEFLUX,k,n,outfile);
-    if (!writeOutputFile(outfile,e_vPEflux[k],Nx,Ny)) return false;
-    constructOutputName(outdir,VARID_ENERGY_WINDWORK,k,n,outfile);
-    if (!writeOutputFile(outfile,e_windWork[k],Nx,Ny)) return false;
-    constructOutputName(outdir,VARID_ENERGY_FRICDISS,k,n,outfile);
-    if (!writeOutputFile(outfile,e_fricDiss[k],Nx,Ny)) return false;
-    constructOutputName(outdir,VARID_ENERGY_VISCDISS,k,n,outfile);
-    if (!writeOutputFile(outfile,e_viscDiss[k],Nx,Ny)) return false;
-    constructOutputName(outdir,VARID_ENERGY_DIAPROD,k,n,outfile);
-    if (!writeOutputFile(outfile,e_diaProd[k],Nx,Ny)) return false;
+    if (!writeOutputFile(outfile,e_flux_vPE[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_ADV,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_adv[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_GRADM,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_gradM[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_WIND,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_wind[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_RDRAG,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_rDrag[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_RSURF,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_rSurf[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_CDBOT,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_CdBot[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_CDSURF,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_CdSurf[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_A2,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_A2[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_A4,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_A4[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_WDIAPE,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_wdiaPE[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_WDIAKE,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_wdiaKE[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_FBARO,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_Fbaro[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_BUOY,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_buoy[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_RAND,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_rand[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_RELAX,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_relax[k],Nx,Ny)) return false;
   }
   
 #pragma parallel
@@ -4671,16 +4854,27 @@ mybool writeEnergyAverages (uint n, char * outdir)
     {
       for (k = 0; k < Nlay; k ++)
       {
-        e_uPflux[k][i][j] = 0;
-        e_uKEflux[k][i][j] = 0;
-        e_uPEflux[k][i][j] = 0;
-        e_vPflux[k][i][j] = 0;
-        e_vKEflux[k][i][j] = 0;
-        e_vPEflux[k][i][j] = 0;
-        e_windWork[k][i][j] = 0;
-        e_fricDiss[k][i][j] = 0;
-        e_viscDiss[k][i][j] = 0;
-        e_diaProd[k][i][j] = 0;
+        e_flux_uP[k][i][j] = 0;
+        e_flux_uKE[k][i][j] = 0;
+        e_flux_uPE[k][i][j] = 0;
+        e_flux_vP[k][i][j] = 0;
+        e_flux_vKE[k][i][j] = 0;
+        e_flux_vPE[k][i][j] = 0;
+        e_tend_adv[k][i][j] = 0;
+        e_tend_gradM[k][i][j] = 0;
+        e_tend_wind[k][i][j] = 0;
+        e_tend_rDrag[k][i][j] = 0;
+        e_tend_rSurf[k][i][j] = 0;
+        e_tend_CdBot[k][i][j] = 0;
+        e_tend_CdSurf[k][i][j] = 0;
+        e_tend_A2[k][i][j] = 0;
+        e_tend_A4[k][i][j] = 0;
+        e_tend_wdiaPE[k][i][j] = 0;
+        e_tend_wdiaKE[k][i][j] = 0;
+        e_tend_Fbaro[k][i][j] = 0;
+        e_tend_buoy[k][i][j] = 0;
+        e_tend_rand[k][i][j] = 0;
+        e_tend_relax[k][i][j] = 0;
       }
     }
   }
@@ -5741,16 +5935,27 @@ int main (int argc, char ** argv)
   // For averaging energy budget diagnostics
   if (dt_avg_e > 0)
   {
-    MATALLOC3(e_uPflux,Nlay,Nx,Ny);
-    MATALLOC3(e_uKEflux,Nlay,Nx,Ny);
-    MATALLOC3(e_uPEflux,Nlay,Nx,Ny);
-    MATALLOC3(e_vPflux,Nlay,Nx,Ny);
-    MATALLOC3(e_vKEflux,Nlay,Nx,Ny);
-    MATALLOC3(e_vPEflux,Nlay,Nx,Ny);
-    MATALLOC3(e_windWork,Nlay,Nx,Ny);
-    MATALLOC3(e_fricDiss,Nlay,Nx,Ny);
-    MATALLOC3(e_viscDiss,Nlay,Nx,Ny);
-    MATALLOC3(e_diaProd,Nlay,Nx,Ny);
+    MATALLOC3(e_flux_uP,Nlay,Nx,Ny);
+    MATALLOC3(e_flux_uKE,Nlay,Nx,Ny);
+    MATALLOC3(e_flux_uPE,Nlay,Nx,Ny);
+    MATALLOC3(e_flux_vP,Nlay,Nx,Ny);
+    MATALLOC3(e_flux_vKE,Nlay,Nx,Ny);
+    MATALLOC3(e_flux_vPE,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_adv,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_gradM,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_wind,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_rDrag,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_rSurf,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_CdBot,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_CdSurf,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_A2,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_A4,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_wdiaPE,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_wdiaKE,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_Fbaro,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_buoy,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_rand,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_relax,Nlay,Nx,Ny);
   }
   
   // Work arrays for time derivative function
@@ -7071,16 +7276,27 @@ int main (int argc, char ** argv)
       {
         for (k = 0; k < Nlay; k ++)
         {
-          e_uPflux[k][i][j] = 0;
-          e_uKEflux[k][i][j] = 0;
-          e_uPEflux[k][i][j] = 0;
-          e_vPflux[k][i][j] = 0;
-          e_vKEflux[k][i][j] = 0;
-          e_vPEflux[k][i][j] = 0;
-          e_windWork[k][i][j] = 0;
-          e_fricDiss[k][i][j] = 0;
-          e_viscDiss[k][i][j] = 0;
-          e_diaProd[k][i][j] = 0;
+          e_flux_uP[k][i][j] = 0;
+          e_flux_uKE[k][i][j] = 0;
+          e_flux_uPE[k][i][j] = 0;
+          e_flux_vP[k][i][j] = 0;
+          e_flux_vKE[k][i][j] = 0;
+          e_flux_vPE[k][i][j] = 0;
+          e_tend_adv[k][i][j] = 0;
+          e_tend_gradM[k][i][j] = 0;
+          e_tend_wind[k][i][j] = 0;
+          e_tend_rDrag[k][i][j] = 0;
+          e_tend_rSurf[k][i][j] = 0;
+          e_tend_CdBot[k][i][j] = 0;
+          e_tend_CdSurf[k][i][j] = 0;
+          e_tend_A2[k][i][j] = 0;
+          e_tend_A4[k][i][j] = 0;
+          e_tend_wdiaPE[k][i][j] = 0;
+          e_tend_wdiaKE[k][i][j] = 0;
+          e_tend_Fbaro[k][i][j] = 0;
+          e_tend_buoy[k][i][j] = 0;
+          e_tend_rand[k][i][j] = 0;
+          e_tend_relax[k][i][j] = 0;
         }
       }
     }
