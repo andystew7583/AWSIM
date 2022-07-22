@@ -1553,7 +1553,11 @@ uint surfPressure (real *** uu, real *** vv, real *** hh, real dt, real ** pi, r
         uu[k][i][j] += rhs_u;
         if (dt_avg_hu > 0)
         {
-          hu_tend_gradM[k][i][j] += h_west[k][i][j] * rhs_u;
+          hu_tend_gradM[k][i][j] += h_west[k][i][j] * avg_fac_hu * rhs_u;
+        }
+        if (dt_avg_e > 0)
+        {
+          e_tend_gradM[k][i][j] += rhs_u*h_west[k][i][j]*uu[k][i][j]*avg_fac_e;
         }
       }
     }
@@ -1576,7 +1580,11 @@ uint surfPressure (real *** uu, real *** vv, real *** hh, real dt, real ** pi, r
         vv[k][i][j] += rhs_v;
         if (dt_avg_hv > 0)
         {
-          hv_tend_gradM[k][i][j] += h_south[k][i][j] * rhs_v;
+          hv_tend_gradM[k][i][j] += h_south[k][i][j] * avg_fac_hv * rhs_v;
+        }
+        if (dt_avg_e > 0)
+        {
+          e_tend_gradM[k][i][j] += rhs_v*h_south[k][i][j]*vv[k][i][j]*avg_fac_e;
         }
       }
     }
