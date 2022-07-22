@@ -1460,11 +1460,14 @@ void calcFaceThickness (real ** hh, real ** h_west, real ** h_south, mybool use_
  * The matrix pi is used as a prior for the iterative procedure, and is modified to
  * store the updated value of pi when this function returns.
  *
+ * The flag update_diags tells this function whether to update momentum and energy
+ * diagnostics once the surface pressure has been calculated.
+ *
  * Returns the number of iterations required to achieve convergence,
  * or 0 if the method did not converge.
  *
  */
-uint surfPressure (real *** uu, real *** vv, real *** hh, real dt, real ** pi, real rp)
+uint surfPressure (real *** uu, real *** vv, real *** hh, real dt, real ** pi, real rp, bool update_diags)
 {
   // Volume fluxes at cell faces
   real hu = 0;
@@ -1551,11 +1554,11 @@ uint surfPressure (real *** uu, real *** vv, real *** hh, real dt, real ** pi, r
       {
         rhs_u = - dt*(pi[i][j]-pi[im1][j])/dx;
         uu[k][i][j] += rhs_u;
-        if (dt_avg_hu > 0)
+        if (update_diags && (dt_avg_hu > 0))
         {
           hu_tend_gradM[k][i][j] += h_west[k][i][j] * avg_fac_hu * rhs_u;
         }
-        if (dt_avg_e > 0)
+        if (update_diags && (dt_avg_e > 0))
         {
           e_tend_gradM[k][i][j] += rhs_u*h_west[k][i][j]*uu[k][i][j]*avg_fac_e;
         }
@@ -1578,17 +1581,38 @@ uint surfPressure (real *** uu, real *** vv, real *** hh, real dt, real ** pi, r
       {
         rhs_v = - dt*(pi[i][j]-pi[i][jm1])/dy;
         vv[k][i][j] += rhs_v;
-        if (dt_avg_hv > 0)
+        if (update_diags && (dt_avg_hv > 0))
         {
           hv_tend_gradM[k][i][j] += h_south[k][i][j] * avg_fac_hv * rhs_v;
         }
-        if (dt_avg_e > 0)
+        if (update_diags && (dt_avg_e > 0))
         {
           e_tend_gradM[k][i][j] += rhs_v*h_south[k][i][j]*vv[k][i][j]*avg_fac_e;
         }
       }
     }
     
+  }
+  
+  // Additional energy budget terms
+  if (update_diags && (dt_avg_e > 0))
+  {
+    for (k = 0; k < Nlay; k ++)
+    {
+      for (j = 0; j < Ny; j ++)
+      {
+        jm1 = (j+Ny-1) % Ny;
+        
+        for (i = 0; i < Nx; i ++)
+        {
+          im1 = (i+Nx-1) % Nx;
+          
+          // Barotropic contribution to pressure flux
+          e_flux_uP[k][i][j] += h_west[k][i][j] * uu[k][i][j] * 0.5*(pi[i][j]+pp[im1][j]) * avg_fac_e*dt;
+          e_flux_vP[k][i][j] += h_south[k][i][j] * vv[k][i][j]  * 0.5*(pi[i][j]+pp[i][jm1]) * avg_fac_e*dt;
+        }
+      }
+    }
   }
   
   // If we haven't converged in the required number
@@ -1674,7 +1698,7 @@ real optimizeSOR (real *** uu, real *** vv, real *** hh, real ** pi, real *** uu
       }
       
       // Determine how many iterations were required to solve for the pressure
-      iters_rp = surfPressure(uu_buf,vv_buf,hh,dt,pi_buf,rp);
+      iters_rp = surfPressure(uu_buf,vv_buf,hh,dt,pi_buf,rp,false);
       if (iters_rp == 0)
       {
         iters_rp = maxiters;
@@ -7033,7 +7057,7 @@ int main (int argc, char ** argv)
     correctThickness(hh_out);
     
     rp = 0.5*(rp_opt_min+rp_opt_max);
-    surfPressure(uu,vv,hh,dt,pi,rp); // Needs to be called in order to update uu and vv
+    surfPressure(uu,vv,hh,dt,pi,rp,false); // Needs to be called in order to update uu and vv
   }
   
 #ifdef ALLOW_FFTW
@@ -7461,7 +7485,7 @@ int main (int argc, char ** argv)
         rp = optimizeSOR(uu_out,vv_out,hh_out,pi,uu_buf,vv_buf,pi_buf,dt,rp);
       }
       
-      surfPressure(uu_out,vv_out,hh_out,dt,pi,rp);
+      surfPressure(uu_out,vv_out,hh_out,dt,pi,rp,true);
       
     } // end if (useRL)
     
