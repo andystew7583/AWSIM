@@ -1608,8 +1608,8 @@ uint surfPressure (real *** uu, real *** vv, real *** hh, real dt, real ** pi, r
           im1 = (i+Nx-1) % Nx;
           
           // Barotropic contribution to pressure flux
-          e_flux_uP[k][i][j] += h_west[k][i][j] * uu[k][i][j] * 0.5*(pi[i][j]+pp[im1][j]) * avg_fac_e*dt;
-          e_flux_vP[k][i][j] += h_south[k][i][j] * vv[k][i][j]  * 0.5*(pi[i][j]+pp[i][jm1]) * avg_fac_e*dt;
+          e_flux_uP[k][i][j] += h_west[k][i][j] * uu[k][i][j] * 0.5*(pi[i][j]+pi[im1][j]) * avg_fac_e*dt;
+          e_flux_vP[k][i][j] += h_south[k][i][j] * vv[k][i][j]  * 0.5*(pi[i][j]+pi[i][jm1]) * avg_fac_e*dt;
         }
       }
     }
@@ -2904,7 +2904,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             // N.B. This formulation ignores grid point locations
             e_tend_wdiaKE[k][i][j] += 0.5*(SQUARE(uu_w[k][i0][j0])+SQUARE(vv_w[k][i0][j0]))*rhs_h*avg_fac_e*dt;
             
-            e_tend_wdiaPE[k][i][j] += - geff[k]*(eta_w[k][i0][j0]*wdia[k][i0][j0]-eta_w[k+1][i0][j0]*wdia[k+1][i0][j0])*avg_fac_e*dt
+            e_tend_wdiaPE[k][i][j] += - geff[k]*(eta_w[k][i0][j0]*wdia[k][i][j]-eta_w[k+1][i0][j0]*wdia[k+1][i][j])*avg_fac_e*dt
                                   - (-geff[k]*POW4(h0)/POW3(hh_w[k][i][j])/3) * (-rhs_h) * avg_fac_e*dt;
           }
         }
