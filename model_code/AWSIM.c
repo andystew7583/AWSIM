@@ -3456,7 +3456,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         // Add relaxation terms. Negative values mean no relaxation.
         if (useRelax && (vTime[k][i][j] > 0))
         {
-          rhs_v -= (vv_w[k][i0][j0] - vRelax[k][i][j]) / vTime[k][i][j];
+          rhs_v = - (vv_w[k][i0][j0] - vRelax[k][i][j]) / vTime[k][i][j];
           dt_vv_w[k][i][j] += rhs_v;
           
           if (dt_avg_hu > 0)
