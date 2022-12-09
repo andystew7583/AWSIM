@@ -18,7 +18,7 @@
 #endif
 
 // Must match number of input parameters defined via "setParam" below
-#define NPARAMS 91
+#define NPARAMS 92
 
 // Avoids memory errors associated with usual definition of bool
 typedef int mybool;
@@ -197,6 +197,7 @@ real rDrag = 0;                         // Linear bottom drag coefficient
 real CdBot = 0;                         // Quadratic bottom drag coefficient
 real rSurf = 0;                         // Linear surface drag coefficient
 real CdSurf = 0;                        // Quadratic surface drag coefficient
+bool oceanSurfDrag = true;              // Set to true, this applies surface drag everywhere. Set to false, only where etas<0.
 real ** uLid = NULL;                    // u-velocity of rigid lid - used in the calculation of surface drag
 real ** vLid = NULL;                    // v-velocity of rigid lid - used in the calculation of surface drag
 real ** uLid_g = NULL;                  // u-velocity of rigid lid including ghost points
@@ -3082,6 +3083,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         if (rSurf > 0)
         {
           rhs_u = - rSurf * (uu_w[k][i0][j0] - uLid[i][j]) * hFsurf_west[k][i0][j0];
+          if (!oceanSurfDrag && (hhs_west[i0][j0]>=0))
+          {
+            rhs_u = 0;
+          }
           dt_uu_w[k][i][j] += rhs_u / h_west[k][i0][j0];
           if (dt_avg_hu > 0)
           {
@@ -3112,6 +3117,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         if (CdSurf > 0)
         {
           rhs_u = - CdSurf * 0.5*(uabs_surf[i0][j0]+uabs_surf[im1][j0]) * (uu_w[k][i0][j0] - uLid[i][j]) * hFsurf_west[k][i0][j0];
+          if (!oceanSurfDrag && (hhs_west[i0][j0]>=0))
+          {
+            rhs_u = 0;
+          }
           dt_uu_w[k][i][j] += rhs_u / h_west[k][i0][j0];
           if (dt_avg_hu > 0)
           {
@@ -3362,6 +3371,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         if (rSurf > 0)
         {
           rhs_v = - rSurf * (vv_w[k][i0][j0] - vLid[i][j]) * hFsurf_south[k][i0][j0];
+          if (!oceanSurfDrag && (hhs_south[i0][j0]>=0))
+          {
+            rhs_v = 0;
+          }
           dt_vv_w[k][i][j] += rhs_v / h_south[k][i0][j0];
           if (dt_avg_hv > 0)
           {
@@ -3392,6 +3405,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         if (CdSurf > 0)
         {
           rhs_v = - CdSurf * 0.5*(uabs_surf[i0][j0]+uabs_surf[i0][jm1]) * (vv_w[k][i0][j0] - vLid[i][j]) * hFsurf_south[k][i0][j0];
+          if (!oceanSurfDrag && (hhs_south[i0][j0]>=0))
+          {
+            rhs_v = 0;
+          }
           dt_vv_w[k][i][j] += rhs_v / h_south[k][i0][j0];
           if (dt_avg_hv > 0)
           {
@@ -5106,6 +5123,10 @@ void printUsage()
      "                      Optional - default is 0.0.\n"
      "  quadDragSurf        Quadratic surface drag coefficient (dimensionless).\n"
      "                      Must be >= 0. Optional - default is 0.0.\n"
+     "  oceanSurfDrag       Set to true to apply surface linear or quadratic drag\n"
+     "                      at all surface points. Set to false to apply surface\n"
+     "                      drag only where the rigid lid lies below 0.\n"
+     "                      Optional - default is true.\n"
      "  uLidFile            String file name containing x-component of rigid lid\n"
      "                      velocity (m/s), relative to which the surface drag will be\n"
      "                      calculated. Optional - default is 0.0.\n"
@@ -5498,6 +5519,7 @@ int main (int argc, char ** argv)
   setParam(params,paramcntr++,"quadDragCoeff",FLT_FMT,&CdBot,true);
   setParam(params,paramcntr++,"linDragSurf",FLT_FMT,&rSurf,true);
   setParam(params,paramcntr++,"quadDragSurf",FLT_FMT,&CdSurf,true);
+  setParam(params,paramcntr++,"oceanSurfDrag","%d",&oceanSurfDrag,true);
   setParam(params,paramcntr++,"uLidFile","%s",&uLidFile,true);
   setParam(params,paramcntr++,"vLidFile","%s",&vLidFile,true);
   setParam(params,paramcntr++,"FbaroXFile","%s",&FbaroXFile,true);

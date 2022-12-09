@@ -80,7 +80,7 @@ function res = myfun (eta,etab,etas,MM,gg,h0)
       + (gsum(k+1)/3)*h0^4/(eta(k+1)-eta(k+2))^3 ...
       - (gsum(k)/3)*h0^4/(eta(k)-eta(k+1))^3;
     
-    %%% Add a very large error if the layer thickness
+    %%% Add a very large error if the layer thickness is negative
     if (eta(k+1)>eta(k))
       res(k) = res(k) + sign(res(k))*1e7*gsum(k)*(eta(k+1)-eta(k))^2;
     end
