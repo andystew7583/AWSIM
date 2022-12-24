@@ -2082,8 +2082,8 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
       for (j = 1; j < Ny+2*Ng-1; j ++)
       {
 
-        z_sml_west = hhs_west[i][j] - hsml;
-        z_sml_south = hhs_south[i][j] - hsml;
+        z_sml_west = eta_west[0][i][j] - hsml;
+        z_sml_south = eta_south[0][i][j] - hsml;
         hF_west_sum = 0;
         hF_south_sum = 0;
         for (k = 0; k < Nlay; k ++)
@@ -3083,7 +3083,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         if (rSurf > 0)
         {
           rhs_u = - rSurf * (uu_w[k][i0][j0] - uLid[i][j]) * hFsurf_west[k][i0][j0];
-          if (!oceanSurfDrag && (hhs_west[i0][j0]>=0))
+          if (!oceanSurfDrag && useRL && (hhs_west[i0][j0]>=0))
           {
             rhs_u = 0;
           }
@@ -3117,7 +3117,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         if (CdSurf > 0)
         {
           rhs_u = - CdSurf * 0.5*(uabs_surf[i0][j0]+uabs_surf[im1][j0]) * (uu_w[k][i0][j0] - uLid[i][j]) * hFsurf_west[k][i0][j0];
-          if (!oceanSurfDrag && (hhs_west[i0][j0]>=0))
+          if (!oceanSurfDrag && useRL && (hhs_west[i0][j0]>=0))
           {
             rhs_u = 0;
           }
@@ -3371,7 +3371,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         if (rSurf > 0)
         {
           rhs_v = - rSurf * (vv_w[k][i0][j0] - vLid[i][j]) * hFsurf_south[k][i0][j0];
-          if (!oceanSurfDrag && (hhs_south[i0][j0]>=0))
+          if (!oceanSurfDrag && useRL && (hhs_south[i0][j0]>=0))
           {
             rhs_v = 0;
           }
@@ -3405,7 +3405,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         if (CdSurf > 0)
         {
           rhs_v = - CdSurf * 0.5*(uabs_surf[i0][j0]+uabs_surf[i0][jm1]) * (vv_w[k][i0][j0] - vLid[i][j]) * hFsurf_south[k][i0][j0];
-          if (!oceanSurfDrag && (hhs_south[i0][j0]>=0))
+          if (!oceanSurfDrag && useRL && (hhs_south[i0][j0]>=0))
           {
             rhs_v = 0;
           }
