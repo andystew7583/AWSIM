@@ -3,6 +3,8 @@
 %%%
 %%% Solves for layer thicknesses given Montgomery potential everywhere.
 %%%
+%%% N.B. This function assumes that AWSIM is being run with a rigid lid!
+%%%
 function hh = solveSalmonThicknesses (hh,etab,etas,MM,gg,h0)
 
   %%% Grid dimensions
