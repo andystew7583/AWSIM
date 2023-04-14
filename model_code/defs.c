@@ -203,6 +203,11 @@ bool readMatrix (char * fname, real ** mat, uint m, uint n, FILE * errstrm)
                 break;
             }
         }
+
+	if (!readok)
+	{
+	    break;
+	}
     }
     
     // Close the file and exit
