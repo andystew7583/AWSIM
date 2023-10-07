@@ -7119,7 +7119,7 @@ int main (int argc, char ** argv)
       {
         for (j = 0; j < Ny; j ++)
         {
-          RF_mask_norm += RFmask_fft[k][i][j];
+          RF_mask_norm += SQUARE(RFmask_fft[k][i][j]);
         }
       }
       RF_mask_norm = sqrt(0.5*RF_mask_norm); // Factor of 0.5 accounts for the fact that only half of the forcing
@@ -7137,6 +7137,9 @@ int main (int argc, char ** argv)
           RFamp_div_fft[k][i][j] = RF_F0_div * RF_kk_recip[i][j] * RFmask_fft[k][i][j] / RF_mask_norm;
         }
       }
+      
+      // Reset random seed
+      srand(time(NULL));
       
       // If we're using barotropic forcing then we only need to initialize the Fourier
       // components in the uppermost layer
