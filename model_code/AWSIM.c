@@ -7138,9 +7138,6 @@ int main (int argc, char ** argv)
         }
       }
       
-      // Reset random seed
-      srand(time(NULL));
-      
       // If we're using barotropic forcing then we only need to initialize the Fourier
       // components in the uppermost layer
       if ((k == 0) || (!useBarotropicRF))
@@ -7519,6 +7516,14 @@ int main (int argc, char ** argv)
     // Evolve the random forcing function, if used
     if (useRandomForcing)
     {
+      
+      // Reset random seed. We use current actual (non-model) time in seconds * current time step
+      // (implicitly modulo the maximum unsigned integer value) to produce a unique seed each model time step.
+      // This is necessary because on some architectures rand() produces patterns of random numbers
+      // that lead systematic spatial biases in the forcing function when it is transformed back to real
+      // space (remarkably).
+      srand(((uint) time(NULL)) * n);
+      
       // Evolve forcing layer by layer
       for (k = 0; k < Nlay; k ++)
       {
