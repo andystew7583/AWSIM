@@ -2441,11 +2441,21 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           else
           {
             pp[i][j] = gg[0]*eta_w[0][i][j];
+            
+            if (useBuoyancy)
+            {
+              pp[i][j] -= bb_w[0][i][j]*eta_w[0][i][j];
+            }
           }
         }
         else
         {
           pp[i][j] += gg[k]*eta_w[k][i][j];
+          
+          if (useBuoyancy)
+          {
+            pp[i][j] += eta_w[k][i][j] * (bb_w[k-1][i][j]-bb_w[k][i][j]);
+          }
         }
         
         // Potential function
@@ -2479,7 +2489,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         }
         
         // Montgomery potential
-        MM_B[i][j] = pp[i][j];
+        MM_B[i][j] = pp[i][j];              
         
         // Add Salmon (2002) term
         MM_B[i][j] -= geff[k] * POW4(h0) / POW3(hh_w[k][i][j]) / 3;
@@ -2653,7 +2663,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           
           
           // Centered differencing
-          if (tracerScheme == TRACER_AL81)
+          if (tracerScheme == TRACER_AL81 || tracerScheme == TRACER_UP3)
           {
             // Tracer gradients and products with velocities
             db_dx[i][j] = (bb_w[k][i][j] - bb_w[k][im1][j]) / dx;
@@ -2747,10 +2757,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             
             db_dx[i][j] = minmod( KT00_sigma * (bb_w[k][ip1][j]-bb_w[k][i][j]),
                                  0.5 * (bb_w[k][ip1][j]-bb_w[k][im1][j]),
-                                 KT00_sigma * (bb_w[k][i][j]-bb_w[k][im1][j]) );
+                                 KT00_sigma * (bb_w[k][i][j]-bb_w[k][im1][j]) ) / dx;
             db_dy[i][j] = minmod( KT00_sigma * (bb_w[k][i][jp1]-bb_w[k][i][j]),
                                  0.5 * (bb_w[k][i][jp1]-bb_w[k][i][jm1]),
-                                 KT00_sigma * (bb_w[k][i][j]-bb_w[k][i][jm1]) );
+                                 KT00_sigma * (bb_w[k][i][j]-bb_w[k][i][jm1]) ) / dy;
           }
         }
         
@@ -2768,14 +2778,14 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             jp1 = j+1;
             
             // Interpolate h to cell west faces
-            bb_xm = bb_w[k][im1][j] + 0.5*db_dx[im1][j];
-            bb_xp = bb_w[k][i][j] - 0.5*db_dx[i][j];
+            bb_xm = bb_w[k][im1][j] + 0.5*db_dx[im1][j]*dx;
+            bb_xp = bb_w[k][i][j] - 0.5*db_dx[i][j]*dx;
             hub[i][j] = (uu_w[k][i][j] > 0) ? bb_xm : bb_xp;
             hub[i][j] *= huu[i][j];
             
             // Interpolate h to cell south faces
-            bb_ym = bb_w[k][i][jm1] + 0.5*db_dy[i][jm1];
-            bb_yp = bb_w[k][i][j] + 0.5*db_dy[i][j];
+            bb_ym = bb_w[k][i][jm1] + 0.5*db_dy[i][jm1]*dy;
+            bb_yp = bb_w[k][i][j] + 0.5*db_dy[i][j]*dy;
             hvb[i][j] = (vv_w[k][i][j] > 0) ? bb_ym : bb_yp;
             hvb[i][j] *= hvv[i][j];
           }
@@ -3135,7 +3145,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         // Acceleration due to lateral buoyancy gradient
         if (useTracer && useBuoyancy)
         {
-          rhs_u = 0.5*(hz[i0][j0]+hz[im1][j0]) * db_dx[i0][j0];
+          rhs_u =  - 0.5*(hz[i0][j0]+hz[im1][j0]) * db_dx[i0][j0];
           dt_uu_w[k][i][j] += rhs_u / h_west[k][i0][j0];
           if (dt_avg_hu > 0)
           {
@@ -3423,7 +3433,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         // Acceleration due to lateral buoyancy gradient
         if (useTracer && useBuoyancy)
         {
-          rhs_v = 0.5*(hz[i0][j0]+hz[i0][jm1]) * db_dy[i0][j0];
+          rhs_v = - 0.5*(hz[i0][j0]+hz[i0][jm1]) * db_dy[i0][j0];
           dt_vv_w[k][i][j] += rhs_v / h_south[k][i0][j0];
           if (dt_avg_hv > 0)
           {
@@ -5617,14 +5627,6 @@ int main (int argc, char ** argv)
   if (useRL && use_MG && (!ispow2u(Nx) || !ispow2u(Ny)))
   {
     fprintf(stderr,"ERROR: To use MultiGrid methods, grid dimensions must be powers of 2.\n");
-    printUsage();
-    return 0;
-  }
-  
-  /// Buoyancy only implemented for 1-layer case with rigid lid
-  if (useTracer && useBuoyancy && ((!useRL) || (Nlay>1)))
-  {
-    fprintf(stderr,"ERROR: Active (buoyancy) tracer only available in one-layer setup with rigid lid.\n");
     printUsage();
     return 0;
   }

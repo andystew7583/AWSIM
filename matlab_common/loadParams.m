@@ -219,3 +219,14 @@ vLid = readDataFile(params_file,dirpath,'vLidFile',Nx,Ny,zeros(Nx,Ny));
 %%% Load barotropic forcing
 Fbaro_x = readDataFile(params_file,dirpath,'FbaroXFile',Nx,Ny,zeros(Nx,Ny)); 
 Fbaro_y = readDataFile(params_file,dirpath,'FbaroYFile',Nx,Ny,zeros(Nx,Ny)); 
+
+%%% Tracer configuration parameters
+[useTracer useTracer_found] = readparam(params_file,'useTracer','%u');
+if (~useTracer_found)
+  useTracer = 0;
+end
+[useBuoyancy useBuoyancy_found] = readparam(params_file,'useWallNS','%u');
+if (~useBuoyancy_found)
+  useBuoyancy = 0;
+end
+
