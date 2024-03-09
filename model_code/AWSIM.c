@@ -18,7 +18,7 @@
 #endif
 
 // Must match number of input parameters defined via "setParam" below
-#define NPARAMS 92
+#define NPARAMS 97
 
 // Avoids memory errors associated with usual definition of bool
 typedef int mybool;
@@ -144,6 +144,13 @@ real *** wdia_u = NULL;
 real *** wdia_v = NULL;
 real **** wdia_ff = NULL;
 
+// Diapycnal diffusion/viscosity
+real *** Fdia_b = NULL;
+real *** Fdia_u = NULL;
+real *** Fdia_v = NULL;
+mybool useDiaDiff = false;
+mybool useDiaVisc = false;
+
 // Grid size - number of grid boxes in the domain
 uint Nx = 0;       // Number of interior gridpoints in the x-direction
 uint Ny = 0;       // Number of interior gridpoints in the y-direction
@@ -205,6 +212,10 @@ real ** vLid_g = NULL;                  // v-velocity of rigid lid including gho
 real ** Fbaro_x = NULL;                 // x-component of imposed barotropic forcing
 real ** Fbaro_y = NULL;                 // y-component of imposed barotropic forcing
 mybool useFbaro = false;                // Will be set true if barotropic forcing is input
+real *** kappa_dia = NULL;              // Diapycnal diffusivity
+real *** Fsurf_b = NULL;                // Surface tracer (or buoyancy) flux
+real *** nu_u_dia = NULL;               // Diapycnal viscosity for u
+real *** nu_v_dia = NULL;               // Diapycnal viscosity for v
 
 // Pressure solve parameters
 mybool use_MG = false;                  // Set true to use MultiGrid rather than SOR
@@ -286,6 +297,7 @@ real *** hu_tend_relax = NULL;
 real *** hu_tend_wdia = NULL;
 real *** hu_tend_rand = NULL;
 real *** hu_tend_Fbaro = NULL;
+real *** hu_tend_diaVisc = NULL;
 
 // Parameters for averaging v-momentum equation
 real avg_fac_hv = 1;       // Fraction of time step used for averaging
@@ -310,6 +322,7 @@ real *** hv_tend_relax = NULL;
 real *** hv_tend_wdia = NULL;
 real *** hv_tend_rand = NULL;
 real *** hv_tend_Fbaro = NULL;
+real *** hv_tend_diaVisc = NULL;
 
 // Parameters for averaging h-equation
 real avg_fac_h = 1;        // Fraction of time step used for averaging
@@ -349,6 +362,21 @@ real *** e_tend_Fbaro = NULL;
 real *** e_tend_buoy = NULL;
 real *** e_tend_rand = NULL;
 real *** e_tend_relax = NULL;
+real *** e_tend_diaVisc = NULL;
+
+// Parameters for averaging b-equation
+real avg_fac_b = 1;        // Fraction of time step used for averaging
+uint n_avg_b = 0;         // Keeps track of number of averages computed
+real dt_avg_b = 0;        // Save time step for averaged output
+uint n_prev_avg_b = 0;    // Model time step number corresponding to previous average output
+real t_next_avg_b = 0;    // Next save time for averaged output
+real avg_len_b = 0;       // True length of time average
+real *** b_tend_adv = NULL;
+real *** b_tend_wdia = NULL;
+real *** b_tend_K2 = NULL;
+real *** b_tend_K4 = NULL;
+real *** b_tend_kappa = NULL;
+real *** b_tend_relax = NULL;
 
 // Time-stepping method to use
 uint timeSteppingScheme = TIMESTEPPING_AB3;
@@ -2012,6 +2040,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
   real vv_p, vv_m, dv_p, dv_m;
   real bb_p, bb_m, db_p, db_m;
   
+  // For diabatic diffusion calculation
+  real db;
+  real dz;
+  
   // Used for wind stress interpolation
   real taux_interp, tauy_interp;
   real nflt;
@@ -2373,7 +2405,82 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
     }
   
   }
-    
+  
+  
+  
+  //////////////////////////////////
+  ///// DIAPYCNAL DIFFUSION CODE /////
+  //////////////////////////////////
+  
+  if (useDiaDiff)
+  {
+    // Calculate diapycnal velocities at  centers of cell upper faces
+    for (i = 0; i < Nx; i ++)
+    {
+      // Offsets account for vectors/matrices that include ghost points.
+      i0 = i + Ng;
+      
+      for (j = 0; j < Ny; j ++)
+      {
+        // Offsets account for vectors/matrices that include ghost points.
+        j0 = j + Ng;
+
+        // Downward buoyancy fluxes
+        Fdia_b[0][i][j] = Fsurf_b[i][j];
+        Fdia_b[Nlay][i][j] = 0;
+        for (k = 1; k < Nlay; k ++)
+        {
+          db = (bb_w[k-1][i0][j0]-bb_w[k][i0][j0]);
+          if (useBuoyancy)
+          {
+            db += gg[k];
+          }
+          dz = 0.5*(hh_w[k][i0][j0]+hh_w[k-1][i0][j0]);
+          Fdia_b[k][i][j] = kappa_dia[k][i][j] * db / dz;
+        }
+      }
+    }
+  }
+  
+  
+  
+  
+  
+  
+  //////////////////////////////////
+  ///// DIAPYCNAL VISCOSITY CODE /////
+  //////////////////////////////////
+  
+  if (useDiaVisc)
+  {
+    // Calculate diapycnal velocities at  centers of cell upper faces
+    for (i = 0; i < Nx; i ++)
+    {
+      // Offsets account for vectors/matrices that include ghost points.
+      i0 = i + Ng;
+      
+      for (j = 0; j < Ny; j ++)
+      {
+        // Offsets account for vectors/matrices that include ghost points.
+        j0 = j + Ng;
+
+        // Downward momentum fluxes
+        Fdia_u[0][i][j] = 0;
+        Fdia_u[Nlay][i][j] = 0;
+        Fdia_v[0][i][j] = 0;
+        Fdia_v[Nlay][i][j] = 0;
+        for (k = 1; k < Nlay; k ++)
+        {
+          du = (uu_w[k-1][i0][j0]-uu_w[k][i0][j0]);
+          dz = 0.5*(hh_west[k][i0][j0]+hh_west[k-1][i0][j0]);
+          Fdia_u[k][i][j] = nu_u_dia[k][i][j] * du / dz;
+          dv = (vv_w[k-1][i0][j0]-vv_w[k][i0][j0]);
+          dz = 0.5*(hh_south[k][i0][j0]+hh_south[k-1][i0][j0]);
+          Fdia_v[k][i][j] = nu_v_dia[k][i][j] * dv / dz;
+        }
+      }
+    }
+  }
   
   
   
@@ -3191,6 +3298,21 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
         }
         
+        // Add diapycnal diffusion
+        if (useDiaVisc)
+        {
+          rhs_u = (Fdia_u[k][i][j] - Fdia_u[k+1][i][j]);
+          dt_uu_w[k][i][j] += rhs_u / h_west[k][i0][j0];
+          if (dt_avg_hu > 0)
+          {
+            hu_tend_diaVisc[k][i][j] += avg_fac_hu*rhs_u*dt;
+          }
+          if (dt_avg_e > 0)
+          {
+            e_tend_diavisc[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
+          }
+        }
+        
         // MUST BE LAST CONTRIBUTION TO du/dt
         // Add relaxation terms. Negative values mean no relaxation.
         if (useRelax && (uTime[k][i][j] > 0))
@@ -3479,6 +3601,21 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
         }
         
+        // Add diapycnal diffusion
+        if (useDiaVisc)
+        {
+          rhs_v = (Fdia_v[k][i][j] - Fdia_v[k+1][i][j]);
+          dt_vv_w[k][i][j] += rhs_v / h_south[k][i0][j0];
+          if (dt_avg_hv > 0)
+          {
+            hv_tend_diavisc[k][i][j] += avg_fac_hv*rhs_v*dt;
+          }
+          if (dt_avg_e > 0)
+          {
+            e_tend_diavisc[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+          }
+        }
+        
         // MUST BE LAST CONTRIBUTION TO dv/dt
         // Add relaxation terms. Negative values mean no relaxation.
         if (useRelax && (vTime[k][i][j] > 0))
@@ -3533,6 +3670,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         /// Tracer tendency ///
         ///////////////////////
         
+        // TODO add tendencies to diagnostics!
         if (useTracer)
         {
           // Initialize
@@ -3541,13 +3679,13 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           // Advection
           if (tracerScheme == TRACER_AL81)
           {
-            dt_bb_w[k][i][j] = dt_bb_w[k][i][j] - 0.5 * (udb_dx[ip1][j0] + udb_dx[i0][j0] + vdb_dy[i0][jp1] + vdb_dy[i0][j0]);
+            rhs_b = - 0.5 * (udb_dx[ip1][j0] + udb_dx[i0][j0] + vdb_dy[i0][jp1] + vdb_dy[i0][j0]);
           }
           else
           {
             // Calculate advective terms via flux form for total tracer, i,e. as ( div (hub) - b div(hu) ) / h
-            dt_bb_w[k][i][j] = dt_bb_w[k][i][j] - ( (hub[ip1][j0]-hub[i0][j0]) / dx + (hvb[i0][jp1]-hvb[i0][j0]) / dy ) / hh_w[k][i0][j0];
-            dt_bb_w[k][i][j] = dt_bb_w[k][i][j] + bb_w[k][i0][j0] * ( (huu[ip1][j0]-huu[i0][j0]) / dx + (hvv[i0][jp1]-hvv[i0][j0]) / dy ) / hh_w[k][i0][j0];
+            rhs_b = - ( (hub[ip1][j0]-hub[i0][j0]) / dx + (hvb[i0][jp1]-hvb[i0][j0]) / dy ) / hh_w[k][i0][j0];
+                    + bb_w[k][i0][j0] * ( (huu[ip1][j0]-huu[i0][j0]) / dx + (hvv[i0][jp1]-hvv[i0][j0]) / dy ) / hh_w[k][i0][j0];
             
             // N.B. the above is equivalent to:
             // dt_bb_w[k][i][j] = dt_bb_w[k][i][j] - (
@@ -3558,6 +3696,8 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             //                                       )
             //                                       / hh_w[k][i0][j0];
           }
+          dt_bb_w[k][i][j] += rhs_b;
+          b_tend_adv[k][i][j] += avg_fac_hv*rhs_v*dt;
           
           // Add diabatic advection
           if (useWDia)
@@ -3566,7 +3706,19 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             bb_m = (k == Nlay-1) ? 0 : bb_w[k+1][i0][j0];
             db_p = (wdia[k][i][j] > 0) ? 0 : bb_p-bb_w[k][i0][j0];
             db_m = (wdia[k+1][i][j] > 0) ? bb_w[k][i0][j0]-bb_m : 0;
+            // If the tracer is a buoyancy variable then we need to account for backroung buoyancy differences between layers
+            if (useBuoyancy)
+            {
+              db_p = db_p + ((k == 0) ? 0 : gg[k]));
+              db_m = db_m + ((k == Nlay-1) ? 0 : gg[k+1]);
+            }
             dt_bb_w[k][i][j] = dt_bb_w[k][i][j] - (wdia[k][i][j] * db_p + wdia[k+1][i][j] * db_m) / hh_w[k][i0][j0];
+          }
+          
+          // Add diapycnal diffusion
+          if (useDiaDiff)
+          {
+            dt_bb_w[k][i][j] = dt_bb_w[k][i][j] + (Fdia_b[k][i][j] - Fdia_b[k+1][i][j]) / hh_w[k][i0][j0];
           }
           
           // Add Laplacian diffusion
@@ -4548,6 +4700,7 @@ mybool writeUMomentumAverages (uint n, char * outdir)
         hu_tend_wdia[k][i][j] /= avg_len_hu;
         hu_tend_rand[k][i][j] /= avg_len_hu;
         hu_tend_Fbaro[k][i][j] /= avg_len_hu;
+        hu_tend_diaVisc[k][i][j] /= avg_len_hu;
       }
     }
   }
@@ -4587,6 +4740,8 @@ mybool writeUMomentumAverages (uint n, char * outdir)
     if (!writeOutputFile(outfile,hu_tend_rand[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_UMOM_FBARO,k,n,outfile);
     if (!writeOutputFile(outfile,hu_tend_Fbaro[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_VMOM_DIAVISC,k,n,outfile);
+    if (!writeOutputFile(outfile,hu_tend_diaVisc[k],Nx,Ny)) return false;
   }
   
 #pragma parallel
@@ -4614,6 +4769,7 @@ mybool writeUMomentumAverages (uint n, char * outdir)
         hu_tend_wdia[k][i][j] = 0;
         hu_tend_rand[k][i][j] = 0;
         hu_tend_Fbaro[k][i][j] = 0;
+        hu_tend_diaVisc[k][i][j] = 0;
       }
     }
   }
@@ -4667,6 +4823,7 @@ mybool writeVMomentumAverages (uint n, char * outdir)
         hv_tend_wdia[k][i][j] /= avg_len_hv;
         hv_tend_rand[k][i][j] /= avg_len_hv;
         hv_tend_Fbaro[k][i][j] /= avg_len_hv;
+        hv_tend_diaVisc[k][i][j] /= avg_len_hv;
       }
     }
   }
@@ -4706,6 +4863,8 @@ mybool writeVMomentumAverages (uint n, char * outdir)
     if (!writeOutputFile(outfile,hv_tend_rand[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_VMOM_FBARO,k,n,outfile);
     if (!writeOutputFile(outfile,hv_tend_Fbaro[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_VMOM_DIAVISC,k,n,outfile);
+    if (!writeOutputFile(outfile,hv_tend_diaVisc[k],Nx,Ny)) return false;
   }
   
 #pragma parallel
@@ -4733,6 +4892,7 @@ mybool writeVMomentumAverages (uint n, char * outdir)
         hv_tend_wdia[k][i][j] = 0;
         hv_tend_rand[k][i][j] = 0;
         hv_tend_Fbaro[k][i][j] = 0;
+        hv_tend_diaVisc[k][i][j] = 0;
       }
     }
   }
@@ -4853,6 +5013,7 @@ mybool writeEnergyAverages (uint n, char * outdir)
         e_tend_buoy[k][i][j] /= avg_len_e;
         e_tend_rand[k][i][j] /= avg_len_e;
         e_tend_relax[k][i][j] /= avg_len_e;
+        e_tend_diaVisc[k][i][j] /= avg_len_e;
       }
     }
   }
@@ -4902,6 +5063,8 @@ mybool writeEnergyAverages (uint n, char * outdir)
     if (!writeOutputFile(outfile,e_tend_rand[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_ENERGY_RELAX,k,n,outfile);
     if (!writeOutputFile(outfile,e_tend_relax[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_ENERGY_DIAVISC,k,n,outfile);
+    if (!writeOutputFile(outfile,e_tend_diaVisc[k],Nx,Ny)) return false;
   }
   
 #pragma parallel
@@ -4934,6 +5097,7 @@ mybool writeEnergyAverages (uint n, char * outdir)
         e_tend_buoy[k][i][j] = 0;
         e_tend_rand[k][i][j] = 0;
         e_tend_relax[k][i][j] = 0;
+        e_tend_diaVisc[k][i][j] = 0;
       }
     }
   }
@@ -4943,6 +5107,82 @@ mybool writeEnergyAverages (uint n, char * outdir)
 
 
 
+
+
+
+
+
+
+/**
+ *
+ * writeTracerAverages
+ *
+ * Calculates averages of terms in the tracer equation, writes averages to output
+ * files, and resets averaging buffers and parameters.
+ *
+ */
+mybool writeTracerAverages (uint n, char * outdir)
+{
+  uint i,j,k;
+  char outfile[MAX_PARAMETER_FILENAME_LENGTH];
+  
+#pragma parallel
+  
+  // Divide by averaging step length to compute averages
+  for (i = 0; i < Nx; i ++)
+  {
+    for (j = 0; j < Ny; j ++)
+    {
+      for (k = 0; k < Nlay; k ++)
+      {
+        b_tend_adv[k][i][j] /= avg_len_b;
+        b_tend_wdia[k][i][j] /= avg_len_b;
+        b_tend_K2[k][i][j] /= avg_len_b;
+        b_tend_K4[k][i][j] /= avg_len_b;
+        b_tend_kappa[k][i][j] /= avg_len_b;
+        b_tend_relax[k][i][j] /= avg_len_b;
+      }
+    }
+  }
+  
+  // Save averages to output files
+  for (k = 0; k < Nlay; k ++)
+  {
+    constructOutputName(outdir,VARID_TRAC_ADV,k,n,outfile);
+    if (!writeOutputFile(outfile,b_tend_adv[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_TRAC_WDIA,k,n,outfile);
+    if (!writeOutputFile(outfile,b_tend_wdia[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_TRAC_K2,k,n,outfile);
+    if (!writeOutputFile(outfile,b_tend_K2[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_TRAC_K4,k,n,outfile);
+    if (!writeOutputFile(outfile,b_tend_K4[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_TRAC_DIADIFF,k,n,outfile);
+    if (!writeOutputFile(outfile,b_tend_kappa[k],Nx,Ny)) return false;
+    constructOutputName(outdir,VARID_TRAC_RELAX,k,n,outfile);
+    if (!writeOutputFile(outfile,b_tend_relax[k],Nx,Ny)) return false;
+  }
+  
+#pragma parallel
+  
+  // Reset averaging buffers
+  for (i = 0; i < Nx; i ++)
+  {
+    for (j = 0; j < Ny; j ++)
+    {
+      for (k = 0; k < Nlay; k ++)
+      {
+        b_tend_adv[k][i][j] = 0;
+        b_tend_wdia[k][i][j] = 0;
+        b_tend_K2[k][i][j] = 0;
+        b_tend_K4[k][i][j] = 0;
+        b_tend_kappa[k][i][j] = 0;
+        b_tend_relax[k][i][j] = 0;
+      }
+    }
+  }
+  
+  return true;
+}
 
 
 
@@ -5011,6 +5251,9 @@ void printUsage()
      "                      calculated. Optional - default is 0. N.B. The energy\n"
      "                      diagnostics neglect barotropic forcing, horizontal buoyancy\n"
      "                      effects and random forcing.\n"
+     "  savefreqTracer      Frequency of averaged output of tracer equation terms,\n"
+     "                      in units of time. For values <=0 no averaged products will be\n"
+     "                      calculated. Optional - default is 0.\n"
      "  savefreqEZ          Storage frequency for energy and potential\n"
      "                      enstrophy, in units of time.\n"
      "                      Negative or zero values disable this diagnostic.\n"
@@ -5186,6 +5429,18 @@ void printUsage()
      "                      for tracer concentrations. Zero or negative values\n"
      "                      imply no relaxation.  Optional, default is -1\n"
      "                      (no relaxation) everywhere. Size: Nlay x Nx x Ny.\n"
+     "  diaDiffFile         String file name containing diapycnal diffusivities\n"
+     "                      at layer interfaces (in m^2/s). Optional, default is 0\n"
+     "                      everywhere. Size: Nlay x Nx x Ny.\n"
+     "  diaViscUFile        String file name containing diapycnal viscosities\n"
+     "                      for u at layer interfaces (in m^2/s). Optional, default\n"
+     "                      is 0 everywhere. Size: Nlay x Nx x Ny.\n"
+     "  diaViscVFile        String file name containing diapycnal viscosities\n"
+     "                      for v at layer interfaces (in m^2/s). Optional, default\n"
+     "                      is 0 everywhere. Size: Nlay x Nx x Ny.\n"
+     "  bFluxFile           String file name containing fixed surface tracer\n"
+     "                      fluxes in (tracer)*m/s. Optional, default is 0\n"
+     "                      (no flux) everywhere. Size: Nx x Ny.\n"
      "  \n"
      "  Pressure solve parameters:\n"
      "  \n"
@@ -5435,6 +5690,10 @@ int main (int argc, char ** argv)
   char RF_fftMaskFile[MAX_PARAMETER_FILENAME_LENGTH];
   char RF_rotMaskFile[MAX_PARAMETER_FILENAME_LENGTH];
   char RF_divMaskFile[MAX_PARAMETER_FILENAME_LENGTH];
+  char diaDiffFile[MAX_PARAMETER_FILENAME_LENGTH];
+  char diaViscUFile[MAX_PARAMETER_FILENAME_LENGTH];
+  char diaViscVFile[MAX_PARAMETER_FILENAME_LENGTH];
+  char bFluxFile[MAX_PARAMETER_FILENAME_LENGTH];
   
   // Default file name parameters - zero-length strings
   uInitFile[0] = '\0';
@@ -5484,6 +5743,7 @@ int main (int argc, char ** argv)
   setParam(params,paramcntr++,"savefreqVMom",FLT_FMT,&dt_avg_hv,true);
   setParam(params,paramcntr++,"savefreqThic",FLT_FMT,&dt_avg_h,true);
   setParam(params,paramcntr++,"savefreqEnergy",FLT_FMT,&dt_avg_e,true);
+  setParam(params,paramcntr++,"savefreqTracer",FLT_FMT,&dt_avg_b,true);
   setParam(params,paramcntr++,"savefreqEZ",FLT_FMT,&dt_EZ,true);
   setParam(params,paramcntr++,"restart","%d",&restart,true);
   setParam(params,paramcntr++,"startIdx","%u",&n0,true);
@@ -5544,6 +5804,10 @@ int main (int argc, char ** argv)
   setParam(params,paramcntr++,"hTimeFile","%s",&hTimeFile,true);
   setParam(params,paramcntr++,"eTimeFile","%s",&eTimeFile,true);
   setParam(params,paramcntr++,"bTimeFile","%s",&bTimeFile,true);
+  setParam(params,paramcntr++,"diaDiffFile","%s",&diaDiffFile,true);
+  setParam(params,paramcntr++,"diaViscUFile","%s",&diaViscUFile,true);
+  setParam(params,paramcntr++,"diaViscVFile","%s",&diaViscVFile,true);
+  setParam(params,paramcntr++,"bFluxFile","%s",&bFluxFile,true);
   
   // Pressure solve parameters
   setParam(params,paramcntr++,"use_MG","%d",&use_MG,true);
@@ -5650,7 +5914,13 @@ int main (int argc, char ** argv)
   
   // Flag to determine whether diabatic velocity is in use
   useWDia = useRelax || (strlen(wDiaFile) > 0);
-
+  
+  // Flag to determine whether diapycnal diffusion is in use
+  useDiaDiff = (strlen(bFluxFile) > 0) && (strlen(diaDiffFile) > 0);
+  
+  // Flag to determine whether diapycnal viscosity is in use
+  useDiaVisc = (strlen(diaViscUFile) > 0) || (strlen(diaViscVFile) > 0);
+  
   // Gridpoint counters
   N = Nlay*Nx*Ny; // Number of gridpoints for each interior variable (u,v,h)
   Ntotal = useTracer ? 4*N : 3*N; // Total number of gridpoints passed to 'tderiv'
@@ -5771,12 +6041,20 @@ int main (int argc, char ** argv)
     n_avg_h = round(tmin/dt_avg_h) + 1;
   }
   
-  // Initialize next output time for V-momentum diagnostics
+  // Initialize next output time for energy diagnostics
   if (dt_avg_e > 0)
   {
     t_next_avg_e = tmin + dt_avg_e;
     n_prev_avg_e = 0;
     n_avg_e = round(tmin/dt_avg_e) + 1;
+  }
+  
+  // Initialize next output time for tracer diagnostics
+  if (dt_avg_b > 0)
+  {
+    t_next_avg_b = tmin + dt_avg_b;
+    n_prev_avg_b = 0;
+    n_avg_b = round(tmin/dt_avg_b) + 1;
   }
 
   //  Multigrid-specific parameters
@@ -5958,6 +6236,7 @@ int main (int argc, char ** argv)
     MATALLOC3(hu_tend_wdia,Nlay,Nx,Ny);
     MATALLOC3(hu_tend_rand,Nlay,Nx,Ny);
     MATALLOC3(hu_tend_Fbaro,Nlay,Nx,Ny);
+    MATALLOC3(hu_tend_diaVisc,Nlay,Nx,Ny);
   }
   
   // For averaging v-momentum equation
@@ -5979,6 +6258,7 @@ int main (int argc, char ** argv)
     MATALLOC3(hv_tend_wdia,Nlay,Nx,Ny);
     MATALLOC3(hv_tend_rand,Nlay,Nx,Ny);
     MATALLOC3(hv_tend_Fbaro,Nlay,Nx,Ny);
+    MATALLOC3(hv_tend_diaVisc,Nlay,Nx,Ny);
   }
   
   // For averaging thickness equation
@@ -6012,7 +6292,20 @@ int main (int argc, char ** argv)
     MATALLOC3(e_tend_buoy,Nlay,Nx,Ny);
     MATALLOC3(e_tend_rand,Nlay,Nx,Ny);
     MATALLOC3(e_tend_relax,Nlay,Nx,Ny);
+    MATALLOC3(e_tend_diaVisc,Nlay,Nx,Ny);
   }
+    
+  // For averaging tracer equation
+  if (dt_avg_b > 0)
+  {
+    MATALLOC3(b_tend_adv,Nlay,Nx,Ny);
+    MATALLOC3(b_tend_wdia,Nlay,Nx,Ny);
+    MATALLOC3(b_tend_K2,Nlay,Nx,Ny);
+    MATALLOC3(b_tend_K4,,Nlay,Nx,Ny);
+    MATALLOC3(b_tend_kappa,Nlay,Nx,Ny);
+    MATALLOC3(b_tend_relax,Nlay,Nx,Ny);
+  }
+  
   
   // Work arrays for time derivative function
   MATALLOC(qq,Nx+2*Ng,Ny+2*Ng);
@@ -6146,6 +6439,23 @@ int main (int argc, char ** argv)
     MATALLOC3(wdia_u,Nlay+1,Nx,Ny);
     MATALLOC3(wdia_v,Nlay+1,Nx,Ny);
     MATALLOC4(wdia_ff,wDiaNrecs,Nlay+1,Nx,Ny);
+  }
+  
+  // Diapycnal diffusion and surface tracer fluxes
+  if (useDiaDiff)
+  {
+    MATALLOC3(Fdia_b,Nlay+1,Nx,Ny);
+    MATALLOC(Fsurf_b,Nx,Ny);
+    MATALLOC(kappa_dia,Nlay,Nx,Ny);
+  }
+  
+  // Diapycnal viscosity
+  if (useDiaVisc)
+  {
+    MATALLOC3(Fdia_u,Nlay+1,Nx,Ny);
+    MATALLOC3(Fdia_v,Nlay+1,Nx,Ny);
+    MATALLOC(nu_u_dia,Nlay,Nx,Ny);
+    MATALLOC(nu_v_dia,Nlay,Nx,Ny);
   }
   
   // For MultiGrid solver
@@ -6352,6 +6662,23 @@ int main (int argc, char ** argv)
   
 #pragma parallel
   
+  // Default diapycnal velocities/diffusivities and surface tracer flux
+  for (i = 0; i < Nx; i ++)
+  {
+    for (j = 0; j < Ny; j ++)
+    {
+      for (k = 0; k < Nlay; k ++)
+      {
+        kappa_dia[k][i][j] = 0;
+        nu_u_dia[k][i][j] = 0;
+        nu_vdia[k][i][j] = 0;
+      }
+      Fsurf_b[i][j] = 0;
+    }
+  }
+  
+#pragma parallel
+  
   // Default barotropic forcing
   for (i = 0; i < Nx; i ++)
   {
@@ -6417,6 +6744,10 @@ int main (int argc, char ** argv)
        ( (strlen(vTimeFile) > 0)       &&  !readMatrix3(vTimeFile,vTime,Nlay,Nx,Ny,stderr) ) ||
        ( (strlen(hTimeFile) > 0)       &&  !readMatrix(hTimeFile,hTime,Nx,Ny,stderr) )  ||
        ( (strlen(eTimeFile) > 0)       &&  !readMatrix3(eTimeFile,eTime,Nlay,Nx,Ny,stderr) )  ||
+       ( (strlen(diaDiffFile) > 0)     &&  !readMatrix3(diaDiffFile,kappa_dia,Nlay,Nx,Ny,stderr) ) ||
+       ( (strlen(diaViscUFile) > 0)    &&  !readMatrix3(diaViscUFile,nu_u_dia,Nlay,Nx,Ny,stderr) ) ||
+       ( (strlen(diaViscVFile) > 0)    &&  !readMatrix3(diaViscVFile,nu_v_dia,Nlay,Nx,Ny,stderr) )  ||
+       ( (strlen(bFluxFile) > 0)       &&  !readMatrix(bFluxFile,Fsurf_b,Nlay,Nx,Ny,stderr) )  ||
        ( useTracer && (strlen(bTimeFile) > 0)       &&  !readMatrix3(bTimeFile,bTime,Nlay,Nx,Ny,stderr) ) ||
        ( useRandomForcing && (strlen(RF_fftMaskFile) > 0)   &&  !readMatrix3(RF_fftMaskFile,RFmask_fft,Nlay,Nx,Ny,stderr) ) ||
        ( useRandomForcing && (strlen(RF_rotMaskFile) > 0)   &&  !readMatrix3(RF_rotMaskFile,RFmask_rot,Nlay,Nx,Ny,stderr) ) ||
@@ -7270,6 +7601,7 @@ int main (int argc, char ** argv)
           hu_tend_wdia[k][i][j] = 0;
           hu_tend_rand[k][i][j] = 0;
           hu_tend_Fbaro[k][i][j] = 0;
+          hu_tend_diaVisc[k][i][j] = 0;
         }
       }
     }
@@ -7300,6 +7632,7 @@ int main (int argc, char ** argv)
           hv_tend_wdia[k][i][j] = 0;
           hv_tend_rand[k][i][j] = 0;
           hv_tend_Fbaro[k][i][j] = 0;
+          hv_tend_diaVisc[k][i][j] = 0;
         }
       }
     }
@@ -7353,6 +7686,28 @@ int main (int argc, char ** argv)
           e_tend_buoy[k][i][j] = 0;
           e_tend_rand[k][i][j] = 0;
           e_tend_relax[k][i][j] = 0;
+          e_tend_diaVisc[k][i][j] = 0;
+        }
+      }
+    }
+  }
+  
+  // If we are calculating averaged tracer budget diagnostics then initialize averaging arrays to zero
+  if (dt_avg_b > 0)
+  {
+#pragma parallel
+    for (i = 0; i < Nx; i ++)
+    {
+      for (j = 0; j < Ny; j ++)
+      {
+        for (k = 0; k < Nlay; k ++)
+        {
+          b_tend_adv[k][i][j] = 0;
+          b_tend_wdia[k][i][j] = 0;
+          b_tend_K2[k][i][j] = 0;
+          b_tend_K4[k][i][j] = 0;
+          b_tend_kappa[k][i][j] = 0;
+          b_tend_relax[k][i][j] = 0;
         }
       }
     }
@@ -7886,6 +8241,27 @@ int main (int argc, char ** argv)
       n_prev_avg_e = n;
       n_avg_e ++;
       t_next_avg_e = n_avg_e*dt_avg_e;
+    }
+    
+    // If we are time-averaging the tracer budget diagnostics and have passed a save checkpoint
+    // then write averages to output files and reset averaging buffers
+    if ((dt_avg_b > 0) && (t >= t_next_avg_b))
+    {
+      // Calculate true length of averaging period
+      avg_len_b = (n-n_prev_avg_b)*dt;
+      
+      // Write to files
+      if (!writeTracerAverages(n_avg_b,outdir))
+      {
+        fprintf(stderr,"Unable to write averaged terms in tracer equation");
+        printUsage();
+        return 0;
+      }
+      
+      // Reset parameters for next averaging period
+      n_prev_avg_b = n;
+      n_avg_b ++;
+      t_next_avg_b = n_avg_b*dt_avg_b;
     }
     
     // If the time step has taken us past an E/Z save point (or multiple

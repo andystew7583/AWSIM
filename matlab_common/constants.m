@@ -48,6 +48,7 @@ OUTN_UMOM_RELAX = 'UMom_relaxation';
 OUTN_UMOM_WDIA = 'UMom_diapycnal';
 OUTN_UMOM_RAND = 'UMom_randomForcing';
 OUTN_UMOM_FBARO = 'UMom_baroForcing';
+OUTN_UMOM_DIAVISC = 'UMom_diaVisc';
 
 %%% V-momentum equation output filenames
 OUTN_VMOM_Q = 'VMom_PVadvection';
@@ -66,6 +67,7 @@ OUTN_VMOM_RELAX = 'VMom_relaxation';
 OUTN_VMOM_WDIA = 'UMom_diapycnal';
 OUTN_VMOM_RAND = 'VMom_randomForcing';
 OUTN_VMOM_FBARO = 'VMom_baroForcing';
+OUTN_VMOM_DIAVISC = 'VMom_diaVisc';
 
 %%% Thickness equation output filenames
 OUTN_THIC_ADV = 'Thic_advection';
@@ -93,6 +95,15 @@ OUTN_ENERGY_FBARO = 'Energy_baroForcing';
 OUTN_ENERGY_BUOY = 'Energy_buoyForce';
 OUTN_ENERGY_RAND = 'Energy_randomForcing';
 OUTN_ENERGY_RELAX = 'Energy_relaxation';
+OUTN_ENERGY_DIAVISC = 'Energy_diaVisc';
+
+%%% Tracer budget file names
+OUTN_TRAC_ADV = 'Tracer_advection';
+OUTN_TRAC_WDIA= 'Tracer_diaAdv';
+OUTN_TRAC_K2 = 'Tracer_isoDiff';
+OUTN_TRAC_K4 = 'Tracer_hyperdiff';
+OUTN_TRAC_DIADIFF= 'Tracer_diaDiff';
+OUTN_TRAC_RELAX = 'Tracer_relaxation';
 
 %%% Other file names
 OUTN_TFILE = 'time.txt';

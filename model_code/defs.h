@@ -137,6 +137,7 @@
 #define VARID_UMOM_WDIA 43
 #define VARID_UMOM_RAND 44
 #define VARID_UMOM_FBARO 45
+#define VARID_UMOM_DIAVISC 46
 
 #define VARID_VMOM_Q 50
 #define VARID_VMOM_GRADM 51
@@ -154,6 +155,7 @@
 #define VARID_VMOM_WDIA 63
 #define VARID_VMOM_RAND 64
 #define VARID_VMOM_FBARO 65
+#define VARID_VMOM_DIAVISC 66
 
 #define VARID_THIC_ADV 70
 #define VARID_THIC_RELAX 71
@@ -179,7 +181,14 @@
 #define VARID_ENERGY_BUOY 98
 #define VARID_ENERGY_RAND 99
 #define VARID_ENERGY_RELAX 100
+#define VARID_ENERGY_DIAVISC 101
 
+#define VARID_TRAC_ADV 120
+#define VARID_TRAC_WDIA 121
+#define VARID_TRAC_K2 122
+#define VARID_TRAC_K4 123
+#define VARID_TRAC_DIADIFF 124
+#define VARID_TRAC_RELAX 125
 
 // Output filenames
 static const char OUTN_U[] = "U";
@@ -220,6 +229,7 @@ static const char OUTN_UMOM_RELAX[] = "UMom_relaxation";
 static const char OUTN_UMOM_WDIA[] = "UMom_diapycnal";
 static const char OUTN_UMOM_RAND[] = "UMom_randomForcing";
 static const char OUTN_UMOM_FBARO[] = "UMom_baroForcing";
+static const char OUTN_UMOM_DIAVISC[] = "UMom_diaVisc";
 
 // V-momentum equation output filenames
 static const char OUTN_VMOM_Q[] = "VMom_PVadvection";
@@ -238,6 +248,7 @@ static const char OUTN_VMOM_RELAX[] = "VMom_relaxation";
 static const char OUTN_VMOM_WDIA[] = "VMom_diapycnal";
 static const char OUTN_VMOM_RAND[] = "VMom_randomForcing";
 static const char OUTN_VMOM_FBARO[] = "VMom_baroForcing";
+static const char OUTN_VMOM_DIAVISC[] = "VMom_diaVisc";
 
 // Thickness equation output filenames
 static const char OUTN_THIC_ADV[] = "Thic_advection";
@@ -265,6 +276,15 @@ static const char OUTN_ENERGY_FBARO[] = "Energy_baroForcing";
 static const char OUTN_ENERGY_BUOY[] = "Energy_buoyForce";
 static const char OUTN_ENERGY_RAND[] = "Energy_randomForcing";
 static const char OUTN_ENERGY_RELAX[] = "Energy_relaxation";
+static const char OUTN_ENERGY_DIAVISC[] = "Energy_diaVisc";
+
+// Tracer equation output filenames
+static const char OUTN_TRAC_ADV[] = "Tracer_advection";
+static const char OUTN_TRAC_WDIA[] = "Tracer_diaAdv";
+static const char OUTN_TRAC_K2[] = "Tracer_isoDiff";
+static const char OUTN_TRAC_K4[] = "Tracer_hyperdiff";
+static const char OUTN_TRAC_DIADIFF[] = "Tracer_diaDiff";
+static const char OUTN_TRAC_RELAX[] = "Tracer_relaxation";
 
 // Time tracking file and energy/enstrophy diagnostics file
 static const char TFILE[] = "time.txt";
