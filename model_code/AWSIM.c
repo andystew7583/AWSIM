@@ -371,12 +371,12 @@ real dt_avg_b = 0;        // Save time step for averaged output
 uint n_prev_avg_b = 0;    // Model time step number corresponding to previous average output
 real t_next_avg_b = 0;    // Next save time for averaged output
 real avg_len_b = 0;       // True length of time average
-real *** b_tend_adv = NULL;
-real *** b_tend_wdia = NULL;
-real *** b_tend_K2 = NULL;
-real *** b_tend_K4 = NULL;
-real *** b_tend_kappa = NULL;
-real *** b_tend_relax = NULL;
+real *** hb_tend_adv = NULL;
+real *** hb_tend_wdia = NULL;
+real *** hb_tend_K2 = NULL;
+real *** hb_tend_K4 = NULL;
+real *** hb_tend_kappa = NULL;
+real *** hb_tend_relax = NULL;
 
 // Time-stepping method to use
 uint timeSteppingScheme = TIMESTEPPING_AB3;
@@ -2990,6 +2990,11 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         {
           e_tend_adv[k][i][j] += 0.5*(SQUARE(uu_w[k][i0][j0])+SQUARE(vv_w[k][i0][j0]))*rhs_h*avg_fac_e*dt;
         }
+	// Also contributes to the layer-integrated tracer equation
+	if (dt_avg_b > 0)
+	{
+	  hb_tend_adv[k][i][j] += bb_w[k][i0][j0]*rhs_h*avg_fac_b*dt;
+	}    
         
         // Add diabatic velocity terms. Negative values mean no relaxation.
         if (useWDia)
@@ -3025,6 +3030,11 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             e_tend_wdiaPE[k][i][j] += - geff[k]*(eta_w[k][i0][j0]*wdia[k][i][j]-eta_w[k+1][i0][j0]*wdia[k+1][i][j])*avg_fac_e*dt
                                   - (-geff[k]*POW4(h0)/POW3(hh_w[k][i][j])/3) * (-rhs_h) * avg_fac_e*dt;
           }
+	  // Also contributes to the layer-integrated tracer equation
+	  if (dt_avg_b > 0)
+	  {
+	    hb_tend_wdia[k][i][j] += bb_w[k][i0][j0]*rhs_h*avg_fac_b*dt;
+	  }    
         }
 
         ///////////////////////////////
@@ -3697,8 +3707,11 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             //                                       / hh_w[k][i0][j0];
           }
           dt_bb_w[k][i][j] += rhs_b;
-          b_tend_adv[k][i][j] += avg_fac_hv*rhs_v*dt;
-          
+	  if (dt_avg_b > 0)
+	  {
+	    hb_tend_adv[k][i][j] += hh_w[k][i0][j0]*avg_fac_b*rhs_b*dt;
+          }
+	  
           // Add diabatic advection
           if (useWDia)
           {
@@ -3706,47 +3719,70 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             bb_m = (k == Nlay-1) ? 0 : bb_w[k+1][i0][j0];
             db_p = (wdia[k][i][j] > 0) ? 0 : bb_p-bb_w[k][i0][j0];
             db_m = (wdia[k+1][i][j] > 0) ? bb_w[k][i0][j0]-bb_m : 0;
-            // If the tracer is a buoyancy variable then we need to account for backroung buoyancy differences between layers
+            // If the tracer is a buoyancy variable then we need to account for backround buoyancy differences between layers
             if (useBuoyancy)
             {
               db_p = db_p + ((k == 0) ? 0 : gg[k]));
               db_m = db_m + ((k == Nlay-1) ? 0 : gg[k+1]);
             }
-            dt_bb_w[k][i][j] = dt_bb_w[k][i][j] - (wdia[k][i][j] * db_p + wdia[k+1][i][j] * db_m) / hh_w[k][i0][j0];
+            rhs_b = - (wdia[k][i][j] * db_p + wdia[k+1][i][j] * db_m);
+	    dt_bb_w[k][i][j] += rhs_b / hh_w[k][i0][j0];
+	    if (dt_avg_b > 0)
+	    {
+	      hb_tend_wdia[k][i][j] += avg_fac_b*rhs_b*dt;
+            }
           }
           
           // Add diapycnal diffusion
           if (useDiaDiff)
           {
-            dt_bb_w[k][i][j] = dt_bb_w[k][i][j] + (Fdia_b[k][i][j] - Fdia_b[k+1][i][j]) / hh_w[k][i0][j0];
+            rhs_b = (Fdia_b[k][i][j] - Fdia_b[k+1][i][j]);
+	    dt_bb_w[k][i][j] += rhs_b / hh_w[k][i0][j0];
+	    if (dt_avg_b > 0)
+	    {
+	      hb_tend_kappa[k][i][j] += avg_fac_b*rhs_b*dt;
+            }
           }
           
           // Add Laplacian diffusion
           if (K2 > 0)
           {
-            dt_bb_w[k][i][j] = dt_bb_w[k][i][j] + K2 *
+            rhs_b = K2 *
             (
                 ( h_west[k][ip1][j0]*(bb_w[k][ip1][j0]-bb_w[k][i0][j0]) - h_west[k][i0][j0]*(bb_w[k][i0][j0]-bb_w[k][im1][j0]) ) / dxsq
               + ( h_south[k][i0][jp1]*(bb_w[k][i0][jp1]-bb_w[k][i0][j0]) - h_south[k][i0][j0]*(bb_w[k][i0][j0]-bb_w[k][i0][jm1]) ) / dysq
-            )
-            / hh_w[k][i0][j0];
+            );
+	    dt_bb_w[k][i][j] += rhs_b / hh_w[k][i0][j0];
+	    if (dt_avg_b > 0)
+	    {
+	      hb_tend_K2[k][i][j] += avg_fac_b*rhs_b*dt;
+            }
           }
           
           // Add biharmonic diffusion
           if (K4 > 0)
           {
-            dt_bb_w[k][i][j] = dt_bb_w[k][i][j] - K4 *
+            rhs_b = - K4 *
             (
                 ( h_west[k][ip1][j0]*(BB4[ip1][j0]-BB4[i0][j0]) - h_west[k][i0][j0]*(BB4[i0][j0]-BB4[im1][j0]) ) / dxsq
               + ( h_south[k][i0][jp1]*(BB4[i0][jp1]-BB4[i0][j0]) - h_south[k][i0][j0]*(BB4[i0][j0]-BB4[i0][jm1]) ) / dysq
-            )
-            / hh_w[k][i0][j0];
+	    );
+	    dt_bb_w[k][i][j] += rhs_b / hh_w[k][i0][j0];
+	    if (dt_avg_b > 0)
+	    {
+	      hb_tend_K4[k][i][j] += avg_fac_b*rhs_b*dt;
+            }
           }
           
           // Add relaxation terms. Negative values mean no relaxation.
           if (useRelax && (bTime[k][i][j] > 0))
           {
-            dt_bb_w[k][i][j] -= (bb_w[k][i0][j0] - bRelax[k][i][j]) / bTime[k][i][j];
+            rhs_b = - (bb_w[k][i0][j0] - bRelax[k][i][j]) / bTime[k][i][j];
+	    dt_bb_w[k][i][j] += rhs_b;
+	    if (dt_avg_b > 0)
+	    {
+	      hb_tend_relax[k][i][j] += hh_w[k][i0][j0]*avg_fac_b*rhs_b*dt;
+            }
           }
           
         } // end if (useTracer)
@@ -5135,12 +5171,12 @@ mybool writeTracerAverages (uint n, char * outdir)
     {
       for (k = 0; k < Nlay; k ++)
       {
-        b_tend_adv[k][i][j] /= avg_len_b;
-        b_tend_wdia[k][i][j] /= avg_len_b;
-        b_tend_K2[k][i][j] /= avg_len_b;
-        b_tend_K4[k][i][j] /= avg_len_b;
-        b_tend_kappa[k][i][j] /= avg_len_b;
-        b_tend_relax[k][i][j] /= avg_len_b;
+        hb_tend_adv[k][i][j] /= avg_len_b;
+        hb_tend_wdia[k][i][j] /= avg_len_b;
+        hb_tend_K2[k][i][j] /= avg_len_b;
+        hb_tend_K4[k][i][j] /= avg_len_b;
+        hb_tend_kappa[k][i][j] /= avg_len_b;
+        hb_tend_relax[k][i][j] /= avg_len_b;
       }
     }
   }
@@ -5149,17 +5185,17 @@ mybool writeTracerAverages (uint n, char * outdir)
   for (k = 0; k < Nlay; k ++)
   {
     constructOutputName(outdir,VARID_TRAC_ADV,k,n,outfile);
-    if (!writeOutputFile(outfile,b_tend_adv[k],Nx,Ny)) return false;
+    if (!writeOutputFile(outfile,hb_tend_adv[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_TRAC_WDIA,k,n,outfile);
-    if (!writeOutputFile(outfile,b_tend_wdia[k],Nx,Ny)) return false;
+    if (!writeOutputFile(outfile,hb_tend_wdia[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_TRAC_K2,k,n,outfile);
-    if (!writeOutputFile(outfile,b_tend_K2[k],Nx,Ny)) return false;
+    if (!writeOutputFile(outfile,hb_tend_K2[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_TRAC_K4,k,n,outfile);
-    if (!writeOutputFile(outfile,b_tend_K4[k],Nx,Ny)) return false;
+    if (!writeOutputFile(outfile,hb_tend_K4[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_TRAC_DIADIFF,k,n,outfile);
-    if (!writeOutputFile(outfile,b_tend_kappa[k],Nx,Ny)) return false;
+    if (!writeOutputFile(outfile,hb_tend_kappa[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_TRAC_RELAX,k,n,outfile);
-    if (!writeOutputFile(outfile,b_tend_relax[k],Nx,Ny)) return false;
+    if (!writeOutputFile(outfile,hb_tend_relax[k],Nx,Ny)) return false;
   }
   
 #pragma parallel
@@ -5171,12 +5207,12 @@ mybool writeTracerAverages (uint n, char * outdir)
     {
       for (k = 0; k < Nlay; k ++)
       {
-        b_tend_adv[k][i][j] = 0;
-        b_tend_wdia[k][i][j] = 0;
-        b_tend_K2[k][i][j] = 0;
-        b_tend_K4[k][i][j] = 0;
-        b_tend_kappa[k][i][j] = 0;
-        b_tend_relax[k][i][j] = 0;
+        hb_tend_adv[k][i][j] = 0;
+        hb_tend_wdia[k][i][j] = 0;
+        hb_tend_K2[k][i][j] = 0;
+        hb_tend_K4[k][i][j] = 0;
+        hb_tend_kappa[k][i][j] = 0;
+        hb_tend_relax[k][i][j] = 0;
       }
     }
   }
@@ -6298,12 +6334,12 @@ int main (int argc, char ** argv)
   // For averaging tracer equation
   if (dt_avg_b > 0)
   {
-    MATALLOC3(b_tend_adv,Nlay,Nx,Ny);
-    MATALLOC3(b_tend_wdia,Nlay,Nx,Ny);
-    MATALLOC3(b_tend_K2,Nlay,Nx,Ny);
-    MATALLOC3(b_tend_K4,,Nlay,Nx,Ny);
-    MATALLOC3(b_tend_kappa,Nlay,Nx,Ny);
-    MATALLOC3(b_tend_relax,Nlay,Nx,Ny);
+    MATALLOC3(hb_tend_adv,Nlay,Nx,Ny);
+    MATALLOC3(hb_tend_wdia,Nlay,Nx,Ny);
+    MATALLOC3(hb_tend_K2,Nlay,Nx,Ny);
+    MATALLOC3(hb_tend_K4,,Nlay,Nx,Ny);
+    MATALLOC3(hb_tend_kappa,Nlay,Nx,Ny);
+    MATALLOC3(hb_tend_relax,Nlay,Nx,Ny);
   }
   
   
@@ -7702,12 +7738,12 @@ int main (int argc, char ** argv)
       {
         for (k = 0; k < Nlay; k ++)
         {
-          b_tend_adv[k][i][j] = 0;
-          b_tend_wdia[k][i][j] = 0;
-          b_tend_K2[k][i][j] = 0;
-          b_tend_K4[k][i][j] = 0;
-          b_tend_kappa[k][i][j] = 0;
-          b_tend_relax[k][i][j] = 0;
+          hb_tend_adv[k][i][j] = 0;
+          hb_tend_wdia[k][i][j] = 0;
+          hb_tend_K2[k][i][j] = 0;
+          hb_tend_K4[k][i][j] = 0;
+          hb_tend_kappa[k][i][j] = 0;
+          hb_tend_relax[k][i][j] = 0;
         }
       }
     }
