@@ -213,7 +213,7 @@ real ** Fbaro_x = NULL;                 // x-component of imposed barotropic for
 real ** Fbaro_y = NULL;                 // y-component of imposed barotropic forcing
 mybool useFbaro = false;                // Will be set true if barotropic forcing is input
 real *** kappa_dia = NULL;              // Diapycnal diffusivity
-real *** Fsurf_b = NULL;                // Surface tracer (or buoyancy) flux
+real ** Fsurf_b = NULL;                // Surface tracer (or buoyancy) flux
 real *** nu_u_dia = NULL;               // Diapycnal viscosity for u
 real *** nu_v_dia = NULL;               // Diapycnal viscosity for v
 
@@ -2040,9 +2040,11 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
   real vv_p, vv_m, dv_p, dv_m;
   real bb_p, bb_m, db_p, db_m;
   
-  // For diabatic diffusion calculation
+  // For diabatic diffusion/viscosity calculation
   real db;
   real dz;
+  real du;
+  real dv;
   
   // Used for wind stress interpolation
   real taux_interp, tauy_interp;
@@ -2472,10 +2474,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         for (k = 1; k < Nlay; k ++)
         {
           du = (uu_w[k-1][i0][j0]-uu_w[k][i0][j0]);
-          dz = 0.5*(hh_west[k][i0][j0]+hh_west[k-1][i0][j0]);
+          dz = 0.5*(h_west[k][i0][j0]+h_west[k-1][i0][j0]);
           Fdia_u[k][i][j] = nu_u_dia[k][i][j] * du / dz;
           dv = (vv_w[k-1][i0][j0]-vv_w[k][i0][j0]);
-          dz = 0.5*(hh_south[k][i0][j0]+hh_south[k-1][i0][j0]);
+          dz = 0.5*(h_south[k][i0][j0]+h_south[k-1][i0][j0]);
           Fdia_v[k][i][j] = nu_v_dia[k][i][j] * dv / dz;
         }
       }
@@ -3319,7 +3321,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
           if (dt_avg_e > 0)
           {
-            e_tend_diavisc[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_diaVisc[k][i][j] += rhs_u*uu_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3618,11 +3620,11 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           dt_vv_w[k][i][j] += rhs_v / h_south[k][i0][j0];
           if (dt_avg_hv > 0)
           {
-            hv_tend_diavisc[k][i][j] += avg_fac_hv*rhs_v*dt;
+            hv_tend_diaVisc[k][i][j] += avg_fac_hv*rhs_v*dt;
           }
           if (dt_avg_e > 0)
           {
-            e_tend_diavisc[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
+            e_tend_diaVisc[k][i][j] += rhs_v*vv_w[k][i0][j0]*avg_fac_e*dt;
           }
         }
         
@@ -3694,7 +3696,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           else
           {
             // Calculate advective terms via flux form for total tracer, i,e. as ( div (hub) - b div(hu) ) / h
-            rhs_b = - ( (hub[ip1][j0]-hub[i0][j0]) / dx + (hvb[i0][jp1]-hvb[i0][j0]) / dy ) / hh_w[k][i0][j0];
+            rhs_b = - ( (hub[ip1][j0]-hub[i0][j0]) / dx + (hvb[i0][jp1]-hvb[i0][j0]) / dy ) / hh_w[k][i0][j0]
                     + bb_w[k][i0][j0] * ( (huu[ip1][j0]-huu[i0][j0]) / dx + (hvv[i0][jp1]-hvv[i0][j0]) / dy ) / hh_w[k][i0][j0];
             
             // N.B. the above is equivalent to:
@@ -3707,14 +3709,15 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             //                                       / hh_w[k][i0][j0];
           }
           dt_bb_w[k][i][j] += rhs_b;
-	  if (dt_avg_b > 0)
-	  {
-	    hb_tend_adv[k][i][j] += hh_w[k][i0][j0]*avg_fac_b*rhs_b*dt;
+          if (dt_avg_b > 0)
+          {
+            hb_tend_adv[k][i][j] += hh_w[k][i0][j0]*avg_fac_b*rhs_b*dt;
           }
-	  
+          
           // Add diabatic advection
           if (useWDia)
           {
+            // TODO I'm pretty sure this is wrong - need to re-derive
             bb_p = (k == 0) ? 0 : bb_w[k-1][i0][j0];
             bb_m = (k == Nlay-1) ? 0 : bb_w[k+1][i0][j0];
             db_p = (wdia[k][i][j] > 0) ? 0 : bb_p-bb_w[k][i0][j0];
@@ -3722,14 +3725,14 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             // If the tracer is a buoyancy variable then we need to account for backround buoyancy differences between layers
             if (useBuoyancy)
             {
-              db_p = db_p + ((k == 0) ? 0 : gg[k]));
-              db_m = db_m + ((k == Nlay-1) ? 0 : gg[k+1]);
+              db_p = db_p + ((wdia[k][i][j] > 0) ? 0 : gg[k]);
+              db_m = db_m + ((wdia[k+1][i][j] > 0) ? gg[k+1] : 0);
             }
             rhs_b = - (wdia[k][i][j] * db_p + wdia[k+1][i][j] * db_m);
-	    dt_bb_w[k][i][j] += rhs_b / hh_w[k][i0][j0];
-	    if (dt_avg_b > 0)
-	    {
-	      hb_tend_wdia[k][i][j] += avg_fac_b*rhs_b*dt;
+            dt_bb_w[k][i][j] += rhs_b / hh_w[k][i0][j0];
+            if (dt_avg_b > 0)
+            {
+              hb_tend_wdia[k][i][j] += avg_fac_b*rhs_b*dt;
             }
           }
           
@@ -3737,10 +3740,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (useDiaDiff)
           {
             rhs_b = (Fdia_b[k][i][j] - Fdia_b[k+1][i][j]);
-	    dt_bb_w[k][i][j] += rhs_b / hh_w[k][i0][j0];
-	    if (dt_avg_b > 0)
-	    {
-	      hb_tend_kappa[k][i][j] += avg_fac_b*rhs_b*dt;
+            dt_bb_w[k][i][j] += rhs_b / hh_w[k][i0][j0];
+            if (dt_avg_b > 0)
+            {
+              hb_tend_kappa[k][i][j] += avg_fac_b*rhs_b*dt;
             }
           }
           
@@ -3749,13 +3752,13 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             rhs_b = K2 *
             (
-                ( h_west[k][ip1][j0]*(bb_w[k][ip1][j0]-bb_w[k][i0][j0]) - h_west[k][i0][j0]*(bb_w[k][i0][j0]-bb_w[k][im1][j0]) ) / dxsq
-              + ( h_south[k][i0][jp1]*(bb_w[k][i0][jp1]-bb_w[k][i0][j0]) - h_south[k][i0][j0]*(bb_w[k][i0][j0]-bb_w[k][i0][jm1]) ) / dysq
-            );
-	    dt_bb_w[k][i][j] += rhs_b / hh_w[k][i0][j0];
-	    if (dt_avg_b > 0)
-	    {
-	      hb_tend_K2[k][i][j] += avg_fac_b*rhs_b*dt;
+             ( h_west[k][ip1][j0]*(bb_w[k][ip1][j0]-bb_w[k][i0][j0]) - h_west[k][i0][j0]*(bb_w[k][i0][j0]-bb_w[k][im1][j0]) ) / dxsq
+             + ( h_south[k][i0][jp1]*(bb_w[k][i0][jp1]-bb_w[k][i0][j0]) - h_south[k][i0][j0]*(bb_w[k][i0][j0]-bb_w[k][i0][jm1]) ) / dysq
+             );
+            dt_bb_w[k][i][j] += rhs_b / hh_w[k][i0][j0];
+            if (dt_avg_b > 0)
+            {
+              hb_tend_K2[k][i][j] += avg_fac_b*rhs_b*dt;
             }
           }
           
@@ -3764,13 +3767,13 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           {
             rhs_b = - K4 *
             (
-                ( h_west[k][ip1][j0]*(BB4[ip1][j0]-BB4[i0][j0]) - h_west[k][i0][j0]*(BB4[i0][j0]-BB4[im1][j0]) ) / dxsq
-              + ( h_south[k][i0][jp1]*(BB4[i0][jp1]-BB4[i0][j0]) - h_south[k][i0][j0]*(BB4[i0][j0]-BB4[i0][jm1]) ) / dysq
-	    );
-	    dt_bb_w[k][i][j] += rhs_b / hh_w[k][i0][j0];
-	    if (dt_avg_b > 0)
-	    {
-	      hb_tend_K4[k][i][j] += avg_fac_b*rhs_b*dt;
+             ( h_west[k][ip1][j0]*(BB4[ip1][j0]-BB4[i0][j0]) - h_west[k][i0][j0]*(BB4[i0][j0]-BB4[im1][j0]) ) / dxsq
+             + ( h_south[k][i0][jp1]*(BB4[i0][jp1]-BB4[i0][j0]) - h_south[k][i0][j0]*(BB4[i0][j0]-BB4[i0][jm1]) ) / dysq
+             );
+            dt_bb_w[k][i][j] += rhs_b / hh_w[k][i0][j0];
+            if (dt_avg_b > 0)
+            {
+              hb_tend_K4[k][i][j] += avg_fac_b*rhs_b*dt;
             }
           }
           
@@ -3778,10 +3781,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           if (useRelax && (bTime[k][i][j] > 0))
           {
             rhs_b = - (bb_w[k][i0][j0] - bRelax[k][i][j]) / bTime[k][i][j];
-	    dt_bb_w[k][i][j] += rhs_b;
-	    if (dt_avg_b > 0)
-	    {
-	      hb_tend_relax[k][i][j] += hh_w[k][i0][j0]*avg_fac_b*rhs_b*dt;
+            dt_bb_w[k][i][j] += rhs_b;
+            if (dt_avg_b > 0)
+            {
+              hb_tend_relax[k][i][j] += hh_w[k][i0][j0]*avg_fac_b*rhs_b*dt;
             }
           }
           
@@ -5762,6 +5765,10 @@ int main (int argc, char ** argv)
   RF_fftMaskFile[0] = '\0';
   RF_rotMaskFile[0] = '\0';
   RF_divMaskFile[0] = '\0';
+  diaDiffFile[0] = '\0';
+  diaViscUFile[0] = '\0';
+  diaViscVFile[0] = '\0';
+  bFluxFile[0] = '\0';
 
   // Define input parameter data
   setParam(params,paramcntr++,"Nlay","%u",&Nlay,false);
@@ -5952,7 +5959,7 @@ int main (int argc, char ** argv)
   useWDia = useRelax || (strlen(wDiaFile) > 0);
   
   // Flag to determine whether diapycnal diffusion is in use
-  useDiaDiff = (strlen(bFluxFile) > 0) && (strlen(diaDiffFile) > 0);
+  useDiaDiff = (strlen(bFluxFile) > 0) || (strlen(diaDiffFile) > 0);
   
   // Flag to determine whether diapycnal viscosity is in use
   useDiaVisc = (strlen(diaViscUFile) > 0) || (strlen(diaViscVFile) > 0);
@@ -6337,7 +6344,7 @@ int main (int argc, char ** argv)
     MATALLOC3(hb_tend_adv,Nlay,Nx,Ny);
     MATALLOC3(hb_tend_wdia,Nlay,Nx,Ny);
     MATALLOC3(hb_tend_K2,Nlay,Nx,Ny);
-    MATALLOC3(hb_tend_K4,,Nlay,Nx,Ny);
+    MATALLOC3(hb_tend_K4,Nlay,Nx,Ny);
     MATALLOC3(hb_tend_kappa,Nlay,Nx,Ny);
     MATALLOC3(hb_tend_relax,Nlay,Nx,Ny);
   }
@@ -6482,7 +6489,7 @@ int main (int argc, char ** argv)
   {
     MATALLOC3(Fdia_b,Nlay+1,Nx,Ny);
     MATALLOC(Fsurf_b,Nx,Ny);
-    MATALLOC(kappa_dia,Nlay,Nx,Ny);
+    MATALLOC3(kappa_dia,Nlay,Nx,Ny);
   }
   
   // Diapycnal viscosity
@@ -6490,8 +6497,8 @@ int main (int argc, char ** argv)
   {
     MATALLOC3(Fdia_u,Nlay+1,Nx,Ny);
     MATALLOC3(Fdia_v,Nlay+1,Nx,Ny);
-    MATALLOC(nu_u_dia,Nlay,Nx,Ny);
-    MATALLOC(nu_v_dia,Nlay,Nx,Ny);
+    MATALLOC3(nu_u_dia,Nlay,Nx,Ny);
+    MATALLOC3(nu_v_dia,Nlay,Nx,Ny);
   }
   
   // For MultiGrid solver
@@ -6698,18 +6705,35 @@ int main (int argc, char ** argv)
   
 #pragma parallel
   
-  // Default diapycnal velocities/diffusivities and surface tracer flux
-  for (i = 0; i < Nx; i ++)
+  // Default diapycnal diffusivity and surface tracer flux
+  if (useDiaDiff)
   {
-    for (j = 0; j < Ny; j ++)
+    for (i = 0; i < Nx; i ++)
     {
-      for (k = 0; k < Nlay; k ++)
+      for (j = 0; j < Ny; j ++)
       {
-        kappa_dia[k][i][j] = 0;
-        nu_u_dia[k][i][j] = 0;
-        nu_vdia[k][i][j] = 0;
+        for (k = 0; k < Nlay; k ++)
+        {
+          kappa_dia[k][i][j] = 0;        
+        }
+        Fsurf_b[i][j] = 0;
       }
-      Fsurf_b[i][j] = 0;
+    }
+  }
+
+  // Default diapycnal viscosities
+  if (useDiaVisc)
+  {
+    for (i = 0; i < Nx; i ++)
+    {
+      for (j = 0; j < Ny; j ++)
+      {
+        for (k = 0; k < Nlay; k ++)
+        {
+          nu_u_dia[k][i][j] = 0;
+          nu_v_dia[k][i][j] = 0;
+        }
+      }
     }
   }
   
@@ -6780,10 +6804,10 @@ int main (int argc, char ** argv)
        ( (strlen(vTimeFile) > 0)       &&  !readMatrix3(vTimeFile,vTime,Nlay,Nx,Ny,stderr) ) ||
        ( (strlen(hTimeFile) > 0)       &&  !readMatrix(hTimeFile,hTime,Nx,Ny,stderr) )  ||
        ( (strlen(eTimeFile) > 0)       &&  !readMatrix3(eTimeFile,eTime,Nlay,Nx,Ny,stderr) )  ||
-       ( (strlen(diaDiffFile) > 0)     &&  !readMatrix3(diaDiffFile,kappa_dia,Nlay,Nx,Ny,stderr) ) ||
+       ( useTracer && (strlen(diaDiffFile) > 0)     &&  !readMatrix3(diaDiffFile,kappa_dia,Nlay,Nx,Ny,stderr) ) ||
        ( (strlen(diaViscUFile) > 0)    &&  !readMatrix3(diaViscUFile,nu_u_dia,Nlay,Nx,Ny,stderr) ) ||
        ( (strlen(diaViscVFile) > 0)    &&  !readMatrix3(diaViscVFile,nu_v_dia,Nlay,Nx,Ny,stderr) )  ||
-       ( (strlen(bFluxFile) > 0)       &&  !readMatrix(bFluxFile,Fsurf_b,Nlay,Nx,Ny,stderr) )  ||
+       ( useTracer && (strlen(bFluxFile) > 0)       &&  !readMatrix(bFluxFile,Fsurf_b,Nx,Ny,stderr) )  ||
        ( useTracer && (strlen(bTimeFile) > 0)       &&  !readMatrix3(bTimeFile,bTime,Nlay,Nx,Ny,stderr) ) ||
        ( useRandomForcing && (strlen(RF_fftMaskFile) > 0)   &&  !readMatrix3(RF_fftMaskFile,RFmask_fft,Nlay,Nx,Ny,stderr) ) ||
        ( useRandomForcing && (strlen(RF_rotMaskFile) > 0)   &&  !readMatrix3(RF_rotMaskFile,RFmask_rot,Nlay,Nx,Ny,stderr) ) ||
