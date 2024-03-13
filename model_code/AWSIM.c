@@ -3681,8 +3681,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         ///////////////////////
         /// Tracer tendency ///
         ///////////////////////
-        
-        // TODO add tendencies to diagnostics!
+                
         if (useTracer)
         {
           // Initialize
