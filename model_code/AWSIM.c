@@ -18,7 +18,7 @@
 #endif
 
 // Must match number of input parameters defined via "setParam" below
-#define NPARAMS 97
+#define NPARAMS 98
 
 // Avoids memory errors associated with usual definition of bool
 typedef int mybool;
@@ -150,6 +150,7 @@ real *** Fdia_u = NULL;
 real *** Fdia_v = NULL;
 mybool useDiaDiff = false;
 mybool useDiaVisc = false;
+real *** gprime = NULL;           // True local reduced gravity at layer interfaces, accounting for buoyancy variable
 
 // Grid size - number of grid boxes in the domain
 uint Nx = 0;       // Number of interior gridpoints in the x-direction
@@ -213,9 +214,10 @@ real ** Fbaro_x = NULL;                 // x-component of imposed barotropic for
 real ** Fbaro_y = NULL;                 // y-component of imposed barotropic forcing
 mybool useFbaro = false;                // Will be set true if barotropic forcing is input
 real *** kappa_dia = NULL;              // Diapycnal diffusivity
-real ** Fsurf_b = NULL;                // Surface tracer (or buoyancy) flux
+real ** Fsurf_b = NULL;                 // Surface tracer (or buoyancy) flux
 real *** nu_u_dia = NULL;               // Diapycnal viscosity for u
 real *** nu_v_dia = NULL;               // Diapycnal viscosity for v
+real kappa_conv = 0;                    // Convective adjustment diffusivity
 
 // Pressure solve parameters
 mybool use_MG = false;                  // Set true to use MultiGrid rather than SOR
@@ -2045,6 +2047,9 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
   real dz;
   real du;
   real dv;
+  real kappa_eff;
+  real nu_u_eff;
+  real nu_v_eff;
   
   // Used for wind stress interpolation
   real taux_interp, tauy_interp;
@@ -2411,12 +2416,33 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
   
   
   //////////////////////////////////
-  ///// DIAPYCNAL DIFFUSION CODE /////
+  ///// DIAPYCNAL DIFFUSION/VISCOSITY CODE /////
   //////////////////////////////////
+  ///
+  // For convective adjustment scheme
+  if (kappa_conv != 0)
+  {
+    // Calculate buoyancy differences between layers
+    for (i = 0; i < Nx+2*Ng; i ++)
+    {
+      for (j = 0; j < Ny+2*Ng; j ++)
+      {
+        for (k = 1; k < Nlay; k ++)
+        {
+          gprime[k][i][j] = gg[k];
+          if (useBuoyancy)
+          {
+            gprime[k][i][j] += (bb_w[k-1][i][j]-bb_w[k][i][j]);
+          }
+        }
+      }
+    }
+    
+  }
   
   if (useDiaDiff)
   {
-    // Calculate diapycnal velocities at  centers of cell upper faces
+    // Calculate diapycnal tracer fluxes at  centers of cell upper faces
     for (i = 0; i < Nx; i ++)
     {
       // Offsets account for vectors/matrices that include ghost points.
@@ -2433,39 +2459,40 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         for (k = 1; k < Nlay; k ++)
         {
           db = (bb_w[k-1][i0][j0]-bb_w[k][i0][j0]);
+          dz = 0.5*(hh_w[k][i0][j0]+hh_w[k-1][i0][j0]);
+          kappa_eff = kappa_dia[k][i][j];
           if (useBuoyancy)
           {
             db += gg[k];
           }
-          dz = 0.5*(hh_w[k][i0][j0]+hh_w[k-1][i0][j0]);
-          Fdia_b[k][i][j] = kappa_dia[k][i][j] * db / dz;
+          if (kappa_conv != 0)
+          {
+            if (gprime[k][i0][j0] < 0)
+            {
+              kappa_eff += kappa_conv;
+            }
+          }
+          Fdia_b[k][i][j] = kappa_eff * db / dz;
         }
       }
     }
   }
   
-  
-  
-  
-  
-  
-  //////////////////////////////////
-  ///// DIAPYCNAL VISCOSITY CODE /////
-  //////////////////////////////////
-  
   if (useDiaVisc)
   {
-    // Calculate diapycnal velocities at  centers of cell upper faces
+    // Calculate diapycnal momentum fluxes at  centers of cell upper faces
     for (i = 0; i < Nx; i ++)
     {
       // Offsets account for vectors/matrices that include ghost points.
       i0 = i + Ng;
+      im1 = i + Ng - 1;
       
       for (j = 0; j < Ny; j ++)
       {
         // Offsets account for vectors/matrices that include ghost points.
         j0 = j + Ng;
-
+        jm1 = j + Ng - 1;
+        
         // Downward momentum fluxes
         Fdia_u[0][i][j] = 0;
         Fdia_u[Nlay][i][j] = 0;
@@ -2475,10 +2502,27 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         {
           du = (uu_w[k-1][i0][j0]-uu_w[k][i0][j0]);
           dz = 0.5*(h_west[k][i0][j0]+h_west[k-1][i0][j0]);
-          Fdia_u[k][i][j] = nu_u_dia[k][i][j] * du / dz;
+          nu_u_eff = nu_u_dia[k][i][j];
+          if (kappa_conv != 0)
+          {
+            if ((gprime[k][i0][j0] < 0) || (gprime[k][im1][j] < 0))
+            {
+              nu_u_eff += kappa_conv;
+            }
+          }
+          Fdia_u[k][i][j] = nu_u_eff * du / dz;
+          
           dv = (vv_w[k-1][i0][j0]-vv_w[k][i0][j0]);
           dz = 0.5*(h_south[k][i0][j0]+h_south[k-1][i0][j0]);
-          Fdia_v[k][i][j] = nu_v_dia[k][i][j] * dv / dz;
+          nu_v_eff = nu_v_dia[k][i][j];
+          if (kappa_conv != 0)
+          {
+            if ((gprime[k][i][j] < 0) || (gprime[k][i][jm1] < 0))
+            {
+              nu_v_eff += kappa_conv;
+            }
+          }
+          Fdia_v[k][i][j] = nu_v_eff * dv / dz;
         }
       }
     }
@@ -3716,7 +3760,6 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           // Add diabatic advection
           if (useWDia)
           {
-            // TODO I'm pretty sure this is wrong - need to re-derive
             bb_p = (k == 0) ? 0 : bb_w[k-1][i0][j0];
             bb_m = (k == Nlay-1) ? 0 : bb_w[k+1][i0][j0];
             db_p = (wdia[k][i][j] > 0) ? 0 : bb_p-bb_w[k][i0][j0];
@@ -5526,6 +5569,8 @@ void printUsage()
      "  bFluxFile           String file name containing fixed surface tracer\n"
      "                      fluxes in (tracer)*m/s. Optional, default is 0\n"
      "                      (no flux) everywhere. Size: Nx x Ny.\n"
+     "  convDiff            Convective adjustment diffusivity in m^2/s.\n"
+     "                      Optional, default is 0.\n"
      "  \n"
      "  Pressure solve parameters:\n"
      "  \n"
@@ -5897,6 +5942,7 @@ int main (int argc, char ** argv)
   setParam(params,paramcntr++,"diaViscUFile","%s",&diaViscUFile,true);
   setParam(params,paramcntr++,"diaViscVFile","%s",&diaViscVFile,true);
   setParam(params,paramcntr++,"bFluxFile","%s",&bFluxFile,true);
+  setParam(params,paramcntr++,"convDiff",FLT_FMT,&kappa_conv,true);
   
   // Pressure solve parameters
   setParam(params,paramcntr++,"use_MG","%d",&use_MG,true);
@@ -6005,10 +6051,10 @@ int main (int argc, char ** argv)
   useWDia = useRelax || (strlen(wDiaFile) > 0);
   
   // Flag to determine whether diapycnal diffusion is in use
-  useDiaDiff = (strlen(bFluxFile) > 0) || (strlen(diaDiffFile) > 0);
+  useDiaDiff = (strlen(bFluxFile) > 0) || (strlen(diaDiffFile) > 0) || (kappa_conv != 0);
   
   // Flag to determine whether diapycnal viscosity is in use
-  useDiaVisc = (strlen(diaViscUFile) > 0) || (strlen(diaViscVFile) > 0);
+  useDiaVisc = (strlen(diaViscUFile) > 0) || (strlen(diaViscVFile) > 0) || (kappa_conv != 0);
   
   // Gridpoint counters
   N = Nlay*Nx*Ny; // Number of gridpoints for each interior variable (u,v,h)
@@ -6545,6 +6591,12 @@ int main (int argc, char ** argv)
     MATALLOC3(Fdia_v,Nlay+1,Nx,Ny);
     MATALLOC3(nu_u_dia,Nlay,Nx,Ny);
     MATALLOC3(nu_v_dia,Nlay,Nx,Ny);
+  }
+  
+  // Needed for convective adjustment scheme
+  if (useDiaDiff || useDiaVisc)
+  {
+    MATALLOC3(gprime,Nlay,Nx+2*Ng,Ny+2*Ng);
   }
   
   // For MultiGrid solver
