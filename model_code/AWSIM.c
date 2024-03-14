@@ -4280,6 +4280,11 @@ void constructOutputName (char * outdir, int varid, int k, uint n, char * outfil
       strcat(outfile,OUTN_UMOM_FBARO);
       break;
     }
+    case VARID_UMOM_DIAVISC:
+    {
+      strcat(outfile,OUTN_UMOM_DIAVISC);
+      break;
+    }
       
     // V-momentum output
     case VARID_VMOM_Q:
@@ -4360,6 +4365,11 @@ void constructOutputName (char * outdir, int varid, int k, uint n, char * outfil
     case VARID_VMOM_FBARO:
     {
       strcat(outfile,OUTN_VMOM_FBARO);
+      break;
+    }
+    case VARID_VMOM_DIAVISC:
+    {
+      strcat(outfile,OUTN_VMOM_DIAVISC);
       break;
     }
       
@@ -4479,6 +4489,43 @@ void constructOutputName (char * outdir, int varid, int k, uint n, char * outfil
     case VARID_ENERGY_RELAX:
     {
       strcat(outfile,OUTN_ENERGY_RELAX);
+      break;
+    }
+    case VARID_ENERGY_DIAVISC:
+    {
+      strcat(outfile,OUTN_ENERGY_DIAVISC);
+      break;
+    }
+      
+    // Tracer equation output
+    case VARID_TRAC_ADV:
+    {
+      strcat(outfile,OUTN_TRAC_ADV);
+      break;
+    }
+    case VARID_TRAC_WDIA:
+    {
+      strcat(outfile,OUTN_TRAC_WDIA);
+      break;
+    }
+    case VARID_TRAC_K2:
+    {
+      strcat(outfile,OUTN_TRAC_K2);
+      break;
+    }
+    case VARID_TRAC_K4:
+    {
+      strcat(outfile,OUTN_TRAC_K4);
+      break;
+    }
+    case VARID_TRAC_DIADIFF:
+    {
+      strcat(outfile,OUTN_TRAC_DIADIFF);
+      break;
+    }
+    case VARID_TRAC_RELAX:
+    {
+      strcat(outfile,OUTN_TRAC_RELAX);
       break;
     }
       
@@ -4778,7 +4825,7 @@ mybool writeUMomentumAverages (uint n, char * outdir)
     if (!writeOutputFile(outfile,hu_tend_rand[k],Nx,Ny)) return false;
     constructOutputName(outdir,VARID_UMOM_FBARO,k,n,outfile);
     if (!writeOutputFile(outfile,hu_tend_Fbaro[k],Nx,Ny)) return false;
-    constructOutputName(outdir,VARID_VMOM_DIAVISC,k,n,outfile);
+    constructOutputName(outdir,VARID_UMOM_DIAVISC,k,n,outfile);
     if (!writeOutputFile(outfile,hu_tend_diaVisc[k],Nx,Ny)) return false;
   }
   
