@@ -2440,7 +2440,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
     
   }
   
-  if (useDiaDiff)
+  if (useTracer && useDiaDiff)
   {
     // Calculate diapycnal tracer fluxes at  centers of cell upper faces
     for (i = 0; i < Nx; i ++)
@@ -3036,11 +3036,11 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         {
           e_tend_adv[k][i][j] += 0.5*(SQUARE(uu_w[k][i0][j0])+SQUARE(vv_w[k][i0][j0]))*rhs_h*avg_fac_e*dt;
         }
-	// Also contributes to the layer-integrated tracer equation
-	if (dt_avg_b > 0)
-	{
-	  hb_tend_adv[k][i][j] += bb_w[k][i0][j0]*rhs_h*avg_fac_b*dt;
-	}    
+        // Also contributes to the layer-integrated tracer equation
+        if (useTracer && (dt_avg_b > 0))
+        {
+          hb_tend_adv[k][i][j] += bb_w[k][i0][j0]*rhs_h*avg_fac_b*dt;
+        }
         
         // Add diabatic velocity terms. Negative values mean no relaxation.
         if (useWDia)
@@ -3076,11 +3076,11 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             e_tend_wdiaPE[k][i][j] += - geff[k]*(eta_w[k][i0][j0]*wdia[k][i][j]-eta_w[k+1][i0][j0]*wdia[k+1][i][j])*avg_fac_e*dt
                                   - (-geff[k]*POW4(h0)/POW3(hh_w[k][i][j])/3) * (-rhs_h) * avg_fac_e*dt;
           }
-	  // Also contributes to the layer-integrated tracer equation
-	  if (dt_avg_b > 0)
-	  {
-	    hb_tend_wdia[k][i][j] += bb_w[k][i0][j0]*rhs_h*avg_fac_b*dt;
-	  }    
+          // Also contributes to the layer-integrated tracer equation
+          if (useTracer && (dt_avg_b > 0))
+          {
+            hb_tend_wdia[k][i][j] += bb_w[k][i0][j0]*rhs_h*avg_fac_b*dt;
+          }
         }
 
         ///////////////////////////////

@@ -225,7 +225,7 @@ Fbaro_y = readDataFile(params_file,dirpath,'FbaroYFile',Nx,Ny,zeros(Nx,Ny));
 if (~useTracer_found)
   useTracer = 0;
 end
-[useBuoyancy useBuoyancy_found] = readparam(params_file,'useWallNS','%u');
+[useBuoyancy useBuoyancy_found] = readparam(params_file,'useBuoyancy','%u');
 if (~useBuoyancy_found)
   useBuoyancy = 0;
 end
