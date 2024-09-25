@@ -211,8 +211,8 @@ end
 if (~tauNrecs_found)
   tauNrecs = 1;
 end
-taux = readDataFile3D(params_file,dirpath,'tauxFile',tauNrecs,Nx,Ny,zeros(tauNrecs,Nx,Ny)); 
-tauy = readDataFile3D(params_file,dirpath,'tauyFile',tauNrecs,Nx,Ny,zeros(tauNrecs,Nx,Ny)); 
+% taux = readDataFile3D(params_file,dirpath,'tauxFile',tauNrecs,Nx,Ny,zeros(tauNrecs,Nx,Ny)); 
+% tauy = readDataFile3D(params_file,dirpath,'tauyFile',tauNrecs,Nx,Ny,zeros(tauNrecs,Nx,Ny)); 
 uLid = readDataFile(params_file,dirpath,'uLidFile',Nx,Ny,zeros(Nx,Ny)); 
 vLid = readDataFile(params_file,dirpath,'vLidFile',Nx,Ny,zeros(Nx,Ny)); 
 

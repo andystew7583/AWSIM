@@ -24,7 +24,7 @@
 typedef int mybool;
 
 // Uncomment to print debug messages
-const mybool debug = true;
+const mybool debug = false;
 
 // Work arrays for the 'tderiv' function
 real * vars_w = NULL;     // Current iteration data
