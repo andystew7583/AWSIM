@@ -18,7 +18,7 @@
 #endif
 
 // Must match number of input parameters defined via "setParam" below
-#define NPARAMS 98
+#define NPARAMS 99
 
 // Avoids memory errors associated with usual definition of bool
 typedef int mybool;
@@ -206,6 +206,8 @@ real CdBot = 0;                         // Quadratic bottom drag coefficient
 real rSurf = 0;                         // Linear surface drag coefficient
 real CdSurf = 0;                        // Quadratic surface drag coefficient
 bool oceanSurfDrag = true;              // Set to true, this applies surface drag everywhere. Set to false, only where etas<0.
+bool windFeedback = false;              // Set true to use Renault et al. surface current stress feedback.
+real wfb_sw = 0;
 real ** uLid = NULL;                    // u-velocity of rigid lid - used in the calculation of surface drag
 real ** vLid = NULL;                    // v-velocity of rigid lid - used in the calculation of surface drag
 real ** uLid_g = NULL;                  // u-velocity of rigid lid including ghost points
@@ -2248,8 +2250,10 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         }
         
         // Store squared surface velocity components, relative to lid velocity components
-        usq_surf[i][j] = (u_surf-uLid_g[i][j])*(u_surf-uLid_g[i][j]);
-        vsq_surf[i][j] = (v_surf-vLid_g[i][j])*(v_surf-vLid_g[i][j]);
+        usq_surf[i][j] = ((1-wfb_sw)*u_surf-uLid_g[i][j]);
+        vsq_surf[i][j] = ((1-wfb_sw)*v_surf-vLid_g[i][j]);
+        usq_surf[i][j] = SQUARE(usq_surf[i][j]); 
+        vsq_surf[i][j] = SQUARE(vsq_surf[i][j]);
       }
     }
     
@@ -3289,7 +3293,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         // Add quadratic surface drag
         if (CdSurf > 0)
         {
-          rhs_u = - CdSurf * 0.5*(uabs_surf[i0][j0]+uabs_surf[im1][j0]) * (uu_w[k][i0][j0] - uLid[i][j]) * hFsurf_west[k][i0][j0];
+          rhs_u = - CdSurf * 0.5*(uabs_surf[i0][j0]+uabs_surf[im1][j0]) * ((1-wfb_sw)*uu_w[k][i0][j0] - uLid[i][j]) * hFsurf_west[k][i0][j0];
           if (!oceanSurfDrag && useRL && (hhs_west[i0][j0]>=0))
           {
             rhs_u = 0;
@@ -3592,7 +3596,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
         // Add quadratic surface drag
         if (CdSurf > 0)
         {
-          rhs_v = - CdSurf * 0.5*(uabs_surf[i0][j0]+uabs_surf[i0][jm1]) * (vv_w[k][i0][j0] - vLid[i][j]) * hFsurf_south[k][i0][j0];
+          rhs_v = - CdSurf * 0.5*(uabs_surf[i0][j0]+uabs_surf[i0][jm1]) * ((1-wfb_sw)*vv_w[k][i0][j0] - vLid[i][j]) * hFsurf_south[k][i0][j0];
           if (!oceanSurfDrag && useRL && (hhs_south[i0][j0]>=0))
           {
             rhs_v = 0;
@@ -5508,6 +5512,10 @@ void printUsage()
      "                      at all surface points. Set to false to apply surface\n"
      "                      drag only where the rigid lid lies below 0.\n"
      "                      Optional - default is true.\n"
+     "  windFeedback        Set to true to apply surface linear or quadratic drag\n"
+     "                      at all surface points. Set to false to apply surface\n"
+     "                      drag only where the rigid lid lies below 0.\n"
+     "                      Optional - default is true.\n"
      "  uLidFile            String file name containing x-component of rigid lid\n"
      "                      velocity (m/s), relative to which the surface drag will be\n"
      "                      calculated. Optional - default is 0.0.\n"
@@ -5924,6 +5932,7 @@ int main (int argc, char ** argv)
   setParam(params,paramcntr++,"linDragSurf",FLT_FMT,&rSurf,true);
   setParam(params,paramcntr++,"quadDragSurf",FLT_FMT,&CdSurf,true);
   setParam(params,paramcntr++,"oceanSurfDrag","%d",&oceanSurfDrag,true);
+  setParam(params,paramcntr++,"windFeedback","%d",&windFeedback,true);
   setParam(params,paramcntr++,"uLidFile","%s",&uLidFile,true);
   setParam(params,paramcntr++,"vLidFile","%s",&vLidFile,true);
   setParam(params,paramcntr++,"FbaroXFile","%s",&FbaroXFile,true);
@@ -6216,6 +6225,12 @@ int main (int argc, char ** argv)
   // Viscosity flags
   useA2 = (A2const > 0) || (A2smag > 0);
   useA4 = (A4const > 0) || (A4smag > 0);
+  
+  // Use non-zero wind coupling parameter if we are parameterizing wind-current feedback
+  if (windFeedback)
+  {
+    wfb_sw = 0.3;
+  }
   
 
   
