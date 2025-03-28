@@ -29,6 +29,7 @@
 #define MOMENTUM_AL81 0 // Arakawa and Lamb (1981)
 #define MOMENTUM_HK83 1 // Hollingsworth and Kallberg (1983)
 #define MOMENTUM_S75e 2 // Sadourny (1975) energy conserving scheme
+#define MOMENTUM_TW81 3 // Takano and Wurtele (1981) energy and enstrophy conserving scheme with fourth order in vorticity equation
 
 // Thickness advection scheme identifiers
 #define THICKNESS_AL81 0 // Centered differencing. Required to conserve potential enstrophy when combined with Arakawa and Lamb (1981) momentum discretization.

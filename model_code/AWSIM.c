@@ -24,7 +24,7 @@
 typedef int mybool;
 
 // Uncomment to print debug messages
-const mybool debug = false;
+const mybool debug = true;
 
 // Work arrays for the 'tderiv' function
 real * vars_w = NULL;     // Current iteration data
@@ -56,6 +56,8 @@ real ** gamma_w = NULL;
 real ** delta_w = NULL;
 real ** epsilon_w = NULL;
 real ** phi_w = NULL;
+real ** lambda_w = NULL;
+real ** mu_w = NULL;
 real ** MM_B = NULL;       // Montgomery potential contribution to Bernoulli Potential
 real ** KE_B = NULL;       // Kinetic energy contribution to Bernoulli potential
 real ** pp = NULL;         // Pressure in each model layer
@@ -386,7 +388,7 @@ real *** hb_tend_relax = NULL;
 uint timeSteppingScheme = TIMESTEPPING_AB3;
 
 // Momentum discretization method to use
-uint momentumScheme = MOMENTUM_AL81;
+uint momentumScheme = MOMENTUM_TW81;
 
 // Thickness discretization method to use
 uint thicknessScheme = THICKNESS_AL81;
@@ -2633,6 +2635,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             // internal symmetric computational instability (Hollingsworth and Kallberg 1983)
           case MOMENTUM_AL81:
           case MOMENTUM_S75e:
+          case MOMENTUM_TW81:
           {
             KE_B[i][j] = ( SQUARE(uu_w[k][ip1][j]) + SQUARE(uu_w[k][i][j]) ) / 4
                         + ( SQUARE(vv_w[k][i][jp1]) + SQUARE(vv_w[k][i][j]) ) / 4;
@@ -2660,6 +2663,21 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           delta_w[i][j] = (qq[ip1][jp1]+2*qq[i][jp1]+qq[i][j]+2*qq[ip1][j]) / 24;
           epsilon_w[i][j] = (qq[ip1][jp1]+qq[i][jp1]-qq[i][j]-qq[ip1][j]) / 24;
           phi_w[i][j] = (-qq[ip1][jp1]+qq[i][jp1]+qq[i][j]-qq[ip1][j]) / 24;
+        }
+        if (momentumScheme == MOMENTUM_TW81)
+        {
+          if (j < Ny+2*Ng-2)
+          {
+            jp2 = j + 2;
+            alpha_w[i][j] = (2*qq[ip1][jp1]+3*qq[i][jp1]+2*qq[i][j]+qq[ip1][j]-qq[i][jp2]-qq[im1][jp1]) / 24;
+            beta_w[i][j] = (3*qq[i][jp1]+2*qq[im1][jp1]+qq[im1][j]+2*qq[i][j]-qq[ip1][jp1]-qq[i][jp2]) / 24;
+            gamma_w[i][j] = (2*qq[i][jp1]+qq[im1][jp1]+2*qq[im1][j]+3*qq[i][j]-qq[i][jm1]-qq[ip1][j]) / 24;
+            delta_w[i][j] = (qq[ip1][jp1]+2*qq[i][jp1]+3*qq[i][j]+2*qq[ip1][j]-qq[im1][j]-qq[i][jm1]) / 24;
+            epsilon_w[i][j] = (qq[ip1][jp1]+qq[i][jp1]-qq[i][j]-qq[ip1][j]) / 24;
+            phi_w[i][j] = (-qq[ip1][jp1]+qq[i][jp1]+qq[i][j]-qq[ip1][j]) / 24;
+            lambda_w[i][j] = (qq[ip1][j]-qq[im1][j]) / 24;
+            mu_w[i][j] = (qq[i][jm1]-qq[i][jp1]) / 24;
+          }
         }
       }
       
@@ -3132,6 +3150,18 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
                               + epsilon_w[im1][j0]*huu[im1][j0];
             break;
           }
+          case MOMENTUM_TW81:
+          {
+              rhs_u           = alpha_w[i0][j0]*hvv[i0][jp1]
+                              + beta_w[i0][j0]*hvv[im1][jp1]
+                              + gamma_w[i0][j0]*hvv[im1][j0]
+                              + delta_w[i0][j0]*hvv[i0][j0]
+                              - epsilon_w[i0][j0]*huu[ip1][j0]
+                              + epsilon_w[im1][j0]*huu[im1][j0]
+                              - lambda_w[i0][jp1]*huu[i0][j0]
+                              + lambda_w[i0][j0]*huu[i0][jm1];
+            break;
+          }
           case MOMENTUM_S75e:
           {
             rhs_u             = 0.25 * qq[i0][j0] * (hvv[i0][j0] + hvv[im1][j0])
@@ -3435,6 +3465,18 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
                               - delta_w[i0][j0]*huu[i0][j0]
                               - alpha_w[i0][jm1]*huu[i0][jm1]
                               - beta_w[ip1][jm1]*huu[ip1][jm1];
+            break;
+          }
+          case MOMENTUM_TW81:
+          {
+            rhs_v             = phi_w[i0][jm1]*hvv[i0][jm1]
+                              - phi_w[i0][j0]*hvv[i0][jp1]
+                              - gamma_w[ip1][j0]*huu[ip1][j0]
+                              - delta_w[i0][j0]*huu[i0][j0]
+                              - alpha_w[i0][jm1]*huu[i0][jm1]
+                              - beta_w[ip1][jm1]*huu[ip1][jm1]
+                              - mu_w[ip1][j0]*hvv[i0][j0]
+                              + mu_w[i0][j0]*hvv[im1][j0];
             break;
           }
           case MOMENTUM_S75e:
@@ -6475,6 +6517,8 @@ int main (int argc, char ** argv)
   MATALLOC(delta_w,Nx+2*Ng,Ny+2*Ng);
   MATALLOC(epsilon_w,Nx+2*Ng,Ny+2*Ng);
   MATALLOC(phi_w,Nx+2*Ng,Ny+2*Ng);
+  MATALLOC(lambda_w,Nx+2*Ng,Ny+2*Ng);
+  MATALLOC(mu_w,Nx+2*Ng,Ny+2*Ng);
   MATALLOC(MM_B,Nx+2*Ng,Ny+2*Ng);
   MATALLOC(KE_B,Nx+2*Ng,Ny+2*Ng);
   MATALLOC(pp,Nx+2*Ng,Ny+2*Ng);
