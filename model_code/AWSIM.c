@@ -162,7 +162,7 @@ uint N = 0;        // Number of gridpoints for each interior variable (u,v,h)
 uint Ntotal = 0;   // Total number of gridpoints passed to 'tderiv'
 uint N_g = 0;   // As above, but including ghost points
 uint Ntotal_g = 0;
-const uint Ng = 3; // Number of ghost points at y-edges of domain
+const uint Ng = 3; // Number of ghost points at edges of domain
 real dt = 0;            // Time step
 real dx = 0;       // Grid spacing
 real dy = 0;       // Grid spacing
@@ -2631,11 +2631,25 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
                           ) / 6;
             break;
           }
+          case MOMENTUM_TW81:
+          {
+            if ((i < Nx+2*Ng-2) && (j < Ny+2*Ng-2))
+            {
+              ip2 = i+2;
+              jp2 = j+2;
+              KE_B[i][j] = 0.25 * ( (2.0/3.0)*SQUARE(uu_w[k][i][j]) + (1.0/3.0)*SQUARE(0.5*(uu_w[k][im1][j]+uu_w[k][ip1][j]))
+                                  + (2.0/3.0)*SQUARE(uu_w[k][ip1][j]) + (1.0/3.0)*SQUARE(0.5*(uu_w[k][i][j]+uu_w[k][ip2][j]))
+                                  + (2.0/3.0)*SQUARE(vv_w[k][i][j]) + (1.0/3.0)*SQUARE(0.5*(vv_w[k][i][jm1]+vv_w[k][i][jp1]))
+                                  + (2.0/3.0)*SQUARE(vv_w[k][i][jp1]) + (1.0/3.0)*SQUARE(0.5*(vv_w[k][i][j]+vv_w[k][i][jp2]))
+                                  );
+            }
+            break;
+          }
+            
             // This version doesn't use ghost h-points, but is subject to an
             // internal symmetric computational instability (Hollingsworth and Kallberg 1983)
           case MOMENTUM_AL81:
           case MOMENTUM_S75e:
-          case MOMENTUM_TW81:
           {
             KE_B[i][j] = ( SQUARE(uu_w[k][ip1][j]) + SQUARE(uu_w[k][i][j]) ) / 4
                         + ( SQUARE(vv_w[k][i][jp1]) + SQUARE(vv_w[k][i][j]) ) / 4;
