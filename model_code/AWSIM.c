@@ -12,6 +12,7 @@
 #include "rk.h"
 #include "ab.h"
 #include "defs.h"
+#include "pressure.h"
 
 #ifdef ALLOW_FFTW
 #include <fftw3.h>
@@ -112,14 +113,6 @@ real ** pi_rhs = NULL;
 real ** Hc = NULL; // Water column thickness on cell centers and edges
 real ** Hw = NULL;
 real ** Hs = NULL;
-real ** Ow = NULL; // "Operators" participating in weighted Laplacian
-real ** Os = NULL;
-real ** Osum = NULL;
-real ** _Osum = NULL;
-real * im1_vec = NULL; // Vectors to store indices of adjacent grid points,
-real * ip1_vec = NULL; // pre-computed for efficiency
-real * jm1_vec = NULL;
-real * jp1_vec = NULL;
 
 // For calculation of E and Z in calcEZ
 real ** Zdens = NULL;
@@ -236,16 +229,9 @@ real rp_opt_min = 1.0;                  // Min value of rp over which to optimiz
 uint N_rp = 10;                         // Determines discretization used in optimizing rp
 uint rp_opt_freq = 1000;                // Number of time steps between optimizations of rp
 uint n_first_optim = 10;                // Number of iterations to wait before first optimization
-real * pi_prev = NULL;                  // Pressure in previous SOR iteration
 
 // MultiGrid-specific parameters
-uint Npx = 0;
-uint Npy = 0;
-uint Ngrids = 0;
-real *** pi_MG = NULL;
 real omega_WJ = 2.0/3.0;
-real * F_MG = NULL;
-uint F_len = 0;
 
 // Thickness advection parameters
 real KT00_sigma = 1.4;
@@ -396,852 +382,6 @@ uint thicknessScheme = THICKNESS_AL81;
 // Tracer discretization method to use
 uint tracerScheme = TRACER_AL81;
 
-// Data storage structure for MultiGrid scheme
-typedef struct data_MG
-{
-  real ** pi; // Nx x Ny matrix containing current solution
-  real ** pi_temp; // Nx x Ny temporary storage matrix
-  real ** pi_rhs; // Nx x Ny matrix containing right-hand side of weighted Poisson equation
-  
-  uint Nx; // Grid size in x (first dimension)
-  uint Ny; // Grid size in y (second dimension)
-  real dx; // Grid spacing in x
-  real dy; // Grid spacing in y
-  
-  real ** Hc; // Water column thickness on cell centers
-  real ** Hw; // Water column thickness on cell western edges
-  real ** Hs; // Water column thickness on cell southern edges
-  
-  real ** Ow; // Nx x Ny matrix containing east-west operators on western edges of grid cells
-  real ** Os; // Nx x Ny matrix containing north-south operators on southern edges of grid cells
-  real ** Osum; // Nx x Ny matrix containing operator sum around edges of each grid cell
-  real ** _Osum; // Nx x Ny matrix containing reciprocal of operator sum around edges of each grid cell
-  
-  real ** wmm; // Nx x Ny interpolation weight matrices. Supply weights to be used in summing
-  real ** wmp; // coarse-grid elements to the southwest (wmm), northwest (wmp), northeast (wpp)
-  real ** wpm; // and southeast (wpm) of each fine-grid element.
-  real ** wpp;
-  
-  real * im1_vec; // Vectors to store indices of adjacent grid points,
-  real * ip1_vec; // pre-computed for efficiency
-  real * jm1_vec;
-  real * jp1_vec;
-}
-data_MG;
-
-// To store MultiGrid solver grids
-data_MG * mg_grids = NULL;
-
-
-
-
-
-/**
- * exactSolve_MG
- *
- * Constructs an exact solution to the Poisson equation for a vector.
- *
- * Nx - Grid size in x (first dimension). Must be 1 if Ny>1.
- * Ny - Grid size in y (second dimension). Must be 1 if Nx>1.
- * pi - Nx x Ny matrix to store solution
- * pi_rhs - Nx x Ny matrix containing right-hand side of weighted Poisson equation
- * Ow - Nx x Ny matrix containing east-west operators on western edges of grid cells
- * Os - Nx x Ny matrix containing north-south operators on southern edges of grid cells
- *
- */
-void exactSolve_MG (  uint      Nx,
-                      uint      Ny,
-                      real **   pi,
-                      real **   pi_rhs,
-                      real **   Ow,
-                      real **   Os  )
-{
-  // Looping variables
-  uint i,j;
-  
-  // Nothing to do in this case
-  if (Nx == 1 && Ny == 1)
-  {
-    pi[0][0] = 0;
-    return;
-  }
-  
-  // Grid construction ensures that either Nx==1 and/or Ny==1 on smallest grid
-  if (Nx == 1)
-  {
-    // Integrate RHS once to get "fluxes" across cell southern edges
-    F_MG[0] = 0;
-    for (j = 1; j <= Ny; j ++)
-    {
-      F_MG[j] = F_MG[j-1] + pi_rhs[0][j-1];
-    }
-    
-    // Integrate "flux" to get pressure in each grid cell
-    pi[0][0] = 0;
-    for (j = 1; j < Ny; j ++)
-    {
-      pi[0][j] = pi[0][j-1] + F_MG[j]/Os[0][j];
-    }
-  }
-  else
-  {
-    // Integrate RHS once to get "fluxes" across cell southern edges
-    F_MG[0] = 0;
-    for (i = 1; i <= Nx; i ++)
-    {
-      F_MG[i] = F_MG[i-1] + pi_rhs[i-1][0];
-    }
-    
-    // Integrate "flux" to get pressure in each grid cell
-    pi[0][0] = 0;
-    for (i = 1; i < Nx; i ++)
-    {
-      pi[i][0] = pi[i-1][0] + F_MG[i]/Ow[i][0];
-    }
-  }
-}
-
-
-
-
-
-
-
-
-
-/**
- * relax_MG
- *
- * Iterates the solution of the weighted Poisson equation once using a weighted Jacobi scheme.
- *
- * Nx - Grid size in x (first dimension)
- * Ny - Grid size in y (second dimension)
- * pi - Nx x Ny matrix containing current solution. Will be modified to store updated solution.
- * pi_prev - Nx x Ny matrix. Will be modified to store current solution.
- * pi_rhs - Nx x Ny matrix containing right-hand side of weighted Poisson equation
- * Ow - Nx x Ny matrix containing east-west operators on western edges of grid cells
- * Os - Nx x Ny matrix containing north-south operators on southern edges of grid cells
- * _Osum - Nx x Ny matrix containing reciprocal of operator sum around edges of each grid cell
- *
- */
-void relax_MG (   uint      Nx,
-                  uint      Ny,
-                  real **   pi,
-                  real **   pi_prev,
-                  real **   pi_rhs,
-                  real **   Ow,
-                  real **   Os,
-                  real **   _Osum )
-{
-  uint i,j,im1,ip1,jm1,jp1;
-  
-  // Copy current solution to pi_prev matrix
-  memcpy(*pi_prev,*pi,Nx*Ny*sizeof(real));
-  
-#pragma parallel
-  
-  // Loop through all indices and perform a single weighted Jacobi iteration, storing the result in pi
-  for (i = 0; i < Nx; i ++)
-  {
-    im1 = (i+Nx-1) % Nx;
-    ip1 = (i+Nx+1) % Nx;
-    
-    for (j = 0; j < Ny; j ++)
-    {
-      jm1 = (j+Ny-1) % Ny;
-      jp1 = (j+Ny+1) % Ny;
-      
-      // N.B. This code is periodic in y, but the operator Os is set such that the wall BCs are included
-      pi[i][j] = omega_WJ * _Osum[i][j] *  ( Os[i][jp1]*pi[i][jp1] + Os[i][j]*pi[i][jm1] + Ow[ip1][j]*pi[ip1][j] + Ow[i][j]*pi[im1][j] - pi_rhs[i][j] )
-               + (1-omega_WJ) * pi[i][j];
-      
-    }
-  }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- * residual_MG
- *
- * Computes the residual (i.e. error) in the solution to the weighted Poisson equation.
- *
- * Nx - Grid size in x (first dimension)
- * Ny - Grid size in y (second dimension)
- * pi - Nx x Ny matrix containing current solution.
- * res - Nx x Ny matrix. Will be modified to store the residual.
- * pi_rhs - Nx x Ny matrix containing right-hand side of weighted Poisson equation
- * Ow - Nx x Ny matrix containing east-west operators on western edges of grid cells
- * Os - Nx x Ny matrix containing north-south operators on southern edges of grid cells
- * Osum - Nx x Ny matrix containing operator sum around edges of each grid cell
- *
- */
-void residual_MG (  uint      Nx,
-                    uint      Ny,
-                    real **   pi,
-                    real **   res,
-                    real **   pi_rhs,
-                    real **   Ow,
-                    real **   Os,
-                    real **   Osum )
-{
-  // For looping
-  uint i,j,im1,ip1,jm1,jp1;
-  
-#pragma parallel
-  
-  // Loop through all indices and compute residual between weighted Laplacian operator and right-hand side
-  for (i = 0; i < Nx; i ++)
-  {
-    im1 = (i+Nx-1) % Nx;
-    ip1 = (i+Nx+1) % Nx;
-    
-    for (j = 0; j < Ny; j ++)
-    {
-      jm1 = (j+Ny-1) % Ny;
-      jp1 = (j+Ny+1) % Ny;
-      
-      // N.B. This code is periodic in y, but the operator Os is set such that the wall BCs are included
-      res[i][j] =  Os[i][jp1]*pi[i][jp1] + Os[i][j]*pi[i][jm1] + Ow[ip1][j]*pi[ip1][j] + Ow[i][j]*pi[im1][j] - Osum[i][j]*pi[i][j] - pi_rhs[i][j];
-    }
-  }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- * restrict_MG
- *
- * Restriction operator for MultiGrid solver. Takes a matrix and restricts it to a coarser
- * grid.
- *
- * Nx - Fine grid size in x (first dimension)
- * Ny - Fine grid size in y (second dimension)
- * pi_f - Nx x Ny fine-resolution matrix containing input data
- * pi_c - Nx/2 x Ny/2 coarse-resolution matrix to store output data
- *
- * Note: Currently only designed for coarsening to a grid with exactly half as many grid cells
- * in each direction.
- *
- */
-void restrict_MG (  uint      Nx,
-                    uint      Ny,
-                    real **   pi_f,
-                    real **   pi_c )
-{
-  // For looping
-  uint i,j;
-  
-#pragma parallel
-  
-  // Restriction operator is simple average of the four fine-grid elements that lie
-  // within each coarse-grid cell
-  for (i = 0; i < Nx/2; i ++)
-  {
-    for (j = 0; j < Ny/2; j ++)
-    {
-      pi_c[i][j] = 0.25 * (pi_f[2*i][2*j] + pi_f[2*i+1][2*j] + pi_f[2*i][2*j+1] + pi_f[2*i+1][2*j+1]);
-    }
-  }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- * interpolate_MG
- *
- * Interpolation operator for MultiGrid solver. Takes a matrix and restricts it to a coarser
- * grid.
- *
- * Nx - Fine grid size in x (first dimension)
- * Ny - Fine grid size in y (second dimension)
- * pi_f - Nx x Ny fine-resolution matrix to store output data
- * pi_c - Nx/2 x Ny/2 coarse-resolution matrix containing input data
- *
- * wmm,wmp,wpm,wpp - Nx x Ny interpolation weight matrices. Supply weights to be used in summing
- *                   coarse-grid elements to the southwest (wmm), northwest (wmp), northeast (wpp)
- *                   and southeast (wpm) of each fine-grid element.
- *
- * Note: Currently only designed for interpolating to a grid with exactly twice as many grid cells
- * in each direction.
- *
- */
-void interpolate_MG ( uint      Nx,
-                      uint      Ny,
-                      real **   pi_f,
-                      real **   pi_c,
-                      real **   wmm,
-                      real **   wmp,
-                      real **   wpm,
-                      real **   wpp   )
-{
-  // For looping
-  uint i,j,im,ip,jm,jp;
-
-#pragma parallel
-  
-  for (i = 0; i < Nx; i ++)
-  {
-    // Identify coarse-grid i-points to the east and west of this fine-grid i-point
-    ip = (((i+1)-(i+1)%2)/2 + Nx/2) % (Nx/2);
-    im = (ip-1 + Nx/2) % (Nx/2);
-    
-    for (j = 0; j < Ny; j ++)
-    {
-      // Identify coarse-grid j-points to the north and south of this fine-grid j-point
-      jp = (((j+1)-(j+1)%2)/2 + Ny/2) % (Ny/2);
-      jm = (jp-1 + Ny/2) % (Ny/2);
-      
-      // Interpolate using pre-calculated weights
-      pi_f[i][j] = wmm[i][j]*pi_c[im][jm] + wpm[i][j]*pi_c[ip][jm] + wmp[i][j]*pi_c[im][jp] + wpp[i][j]*pi_c[ip][jp];
-    }
-  }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- * correct_MG
- *
- * Correction operator for MultiGrid solver. Subtracts correction from the current solution.
- *
- * Nx - Fine grid size in x (first dimension)
- * Ny - Fine grid size in y (second dimension)
- * pi - Nx x Ny matrix containing current solution
- * cor - Nx x Ny matrix containing correction
- *
- * Note: Currently only designed for coarsening to a grid with exactly half as many grid cells
- * in each direction.
- *
- */
-void correct_MG ( uint      Nx,
-                  uint      Ny,
-                  real **   pi,
-                  real **   cor )
-{
-  // For looping
-  uint i,j;
-  
-#pragma parallel
-
-  // Restriction operator is simple average of the four fine-grid elements that lie
-  // within each coarse-grid cell
-  for (i = 0; i < Nx; i ++)
-  {
-    for (j = 0; j < Ny; j ++)
-    {
-      pi[i][j] -= cor[i][j];
-    }
-  }
-  
-}
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- * vcycle_MG
- *
- * Performs a MultiGrid 'V' cycle.
- *
- */
-void vcycle_MG (data_MG * mg_grids, uint n)
-{
-  // Pointer to finest grid in vector of grids
-  data_MG * mg_grid = mg_grids + n;
-  
-  // Smallest grid; solve exactly
-  if (n == 0)
-  {
-    // Perform initial weighted Jacobi iteration
-    exactSolve_MG(  mg_grid->Nx,
-                    mg_grid->Ny,
-                    mg_grid->pi,
-                    mg_grid->pi_rhs,
-                    mg_grid->Ow,
-                    mg_grid->Os     );
-    
-    return;
-  }
-
-  // Perform initial weighted Jacobi iteration
-  relax_MG( mg_grid->Nx,
-              mg_grid->Ny,
-              mg_grid->pi,
-              mg_grid->pi_temp,
-              mg_grid->pi_rhs,
-              mg_grid->Ow,
-              mg_grid->Os,
-              mg_grid->_Osum   );
-
-  // Compute residual of weighted Poisson equation and store in pi_temp
-  residual_MG(  mg_grid->Nx,
-                mg_grid->Ny,
-                mg_grid->pi,
-                mg_grid->pi_temp,
-                mg_grid->pi_rhs,
-                mg_grid->Ow,
-                mg_grid->Os,
-                mg_grid->Osum   );
-
-  // Restrict residual to coarser grid and set it as the right-hand side for the coarser grid solution
-  restrict_MG(  mg_grid->Nx,
-                mg_grid->Ny,
-                mg_grid->pi_temp,
-                mg_grids[n-1].pi_rhs  );
-
-  // Prior for coarser grid solution is zero
-  memset(*(mg_grids[n-1].pi),0,(mg_grids[n-1].Nx)*(mg_grids[n-1].Ny)*sizeof(real));
-
-  // Step down to solve on coarser grid
-  vcycle_MG(mg_grids,n-1);
-
-  // Interpolate correction back to this grid and store in pi_temp
-  interpolate_MG( mg_grid->Nx,
-                  mg_grid->Ny,
-                  mg_grid->pi_temp,
-                  mg_grids[n-1].pi,
-                  mg_grid->wmm,
-                  mg_grid->wmp,
-                  mg_grid->wpm,
-                  mg_grid->wpp   );
-
-  // Subtract correction
-  correct_MG( mg_grid->Nx,
-              mg_grid->Ny,
-              mg_grid->pi,
-              mg_grid->pi_temp );
-
-  // Perform final weighted Jacobi iteration
-  relax_MG(   mg_grid->Nx,
-              mg_grid->Ny,
-              mg_grid->pi,
-              mg_grid->pi_temp,
-              mg_grid->pi_rhs,
-              mg_grid->Ow,
-              mg_grid->Os,
-              mg_grid->_Osum   );
-  
-}
-
-
-
-
-
-
-
-
-
-
-
-/**
- * max_residual
- *
- * Computes the maximum residual (i.e. error) in the pressure.
- *
- * Nx - Grid size in x (first dimension)
- * Ny - Grid size in y (second dimension)
- * pi - Nx x Ny matrix containing current solution.
- 
- * pi_rhs - Nx x Ny matrix containing right-hand side of weighted Poisson equation
- * Ow - Nx x Ny matrix containing east-west operators on western edges of grid cells
- * Os - Nx x Ny matrix containing north-south operators on southern edges of grid cells
- * _Osum - Nx x Ny matrix containing reciprocal of operator sum around edges of each grid cell
- *
- */
-real max_residual ( uint      Nx,
-                    uint      Ny,
-                    real **   pi,
-                    real **   pi_rhs,
-                    real **   Ow,
-                    real **   Os,
-                    real **   _Osum )
-{
-  // For looping
-  uint i,j,im1,ip1,jm1,jp1;
-  real maxres = 0;
-  real res = 0;
-  
-#pragma parallel
-  
-  // Loop through all indices and compute residual between weighted Laplacian operator and right-hand side
-  for (i = 0; i < Nx; i ++)
-  {
-    im1 = (i+Nx-1) % Nx;
-    ip1 = (i+Nx+1) % Nx;
-    
-    for (j = 0; j < Ny; j ++)
-    {
-      jm1 = (j+Ny-1) % Ny;
-      jp1 = (j+Ny+1) % Ny;
-      
-      // N.B. This code is periodic in y, but the operator Os is set such that the wall BCs are included
-      res = pi[i][j] - _Osum[i][j] * ( Os[i][jp1]*pi[i][jp1] + Os[i][j]*pi[i][jm1] + Ow[ip1][j]*pi[ip1][j] + Ow[i][j]*pi[im1][j] - pi_rhs[i][j] );
-      maxres = fmax(maxres,fabs(res));
-    }
-  }
-  
-  return maxres;
-  
-}
-
-
-
-
-
-
-
-
-
-/**
- * iterate_MG
- *
- * Repeatedly uses MultiGrid V-cycles to solve the weighted Poisson equation on a given grid.
- *
- */
-uint iterate_MG (data_MG * mg_grids, uint n)
-{
-  // To record iterations
-  int iters = 0;
-  
-  // To calculate convergence
-  real maxres = pi_tol+1;
-  real diff = 0;
-  
-  // Pointer to MultiGrid grid that we should iterate
-  data_MG * mg_grid = mg_grids + n;
-
-  // Perform MultiGrid iteration
-  iters = 0;
-  while ((maxres > pi_tol) && (iters < maxiters))
-  {
-    // Start multigrid V-cycle
-    vcycle_MG(mg_grids,n);
-
-    // Calculate current residual
-    maxres = max_residual(  mg_grids[n].Nx,
-                            mg_grids[n].Ny,
-                            mg_grids[n].pi,
-                            mg_grids[n].pi_rhs,
-                            mg_grids[n].Ow,
-                            mg_grids[n].Os,
-                            mg_grids[n]._Osum   );
-    
-    // Keep count of iterations
-    iters ++;
-  }
-  
-  // Debug output
-  if (debug)
-  {
-    printf("Grid size: %u x %u\n",mg_grid->Nx,mg_grid->Ny);
-    printf("Iterations: %u\n",iters);
-    printf("Error: %e\n",maxres);
-    fflush(stdout);
-  }
-  
-  return iters;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- * full_MG
- *
- * Performs a full MultiGrid cycle, consisting of a series of V-cycles of increasing length.
- *
- * Returns number of iterations required in the deepest V-cycle, 
- * or maxiters if convergence was not achieved.
- *
- */
-uint full_MG (data_MG * mg_grids)
-{
-  // To record number of iterations
-  uint iters;
-  
-  // For looping
-  uint n;
-
-  // First, restrict RHS to all coarser grids
-  for (n = Ngrids-1; n > 0; n --)
-  {
-    restrict_MG(  mg_grids[n].Nx,
-                  mg_grids[n].Ny,
-                  mg_grids[n].pi_rhs,
-                  mg_grids[n-1].pi_rhs  );
-  }
-
-  // Solve on the coarsest grid
-  vcycle_MG(mg_grids,0);
-
-  // Now perform successive V-cycles, starting from finer and finer grids
-  for (n = 1; n < Ngrids; n ++)
-  {
-    // Interpolate correction back to this grid and store in pi_temp
-    interpolate_MG( mg_grids[n].Nx,
-                    mg_grids[n].Ny,
-                    mg_grids[n].pi,
-                    mg_grids[n-1].pi,
-                    mg_grids[n].wmm,
-                    mg_grids[n].wmp,
-                    mg_grids[n].wpm,
-                    mg_grids[n].wpp   );
-    
-    // Perform the V-cycle
-    iters = iterate_MG(mg_grids,n);
-  }
-  
-  return iters;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- * solve_MG
- *
- * Inverts the thickness-weighted Poisson equation iteratively using a multi-grid method.
- *
- * The Nx x Ny matrix pi is used as a prior for the iterative procedure, and is modified to
- * store the updated value of pi when this function returns.
- *
- * The Nx x Ny matrix pi_rhs stores the right-hand side of the Poisson equation.
- *
- * Returns the number of iterations required for convergence, or 'maxiters' if convergence was
- * not achieved within the stipulated number of iterations.
- *
- */
-uint solve_MG (real ** pi, real ** pi_rhs)
-{
-  // To record iterations
-  int iters = 0;
-  
-  // For timing
-  clock_t start;
-  clock_t end;
-  
-  // Pointer to finest grid in vector of grids
-  data_MG * mg_grid = mg_grids + Ngrids - 1;
-  
-  // Point finest-grid solution and rhs matrices to pi and pi_rhs
-  mg_grid->pi = pi;
-  mg_grid->pi_rhs = pi_rhs;
-  
-  // Initialize timer
-  start = clock();
-
-  if (use_fullMG)
-  {
-    iters = full_MG(mg_grids);
-  }
-  else
-  {
-    iters = iterate_MG(mg_grids,Ngrids-1);
-  }
-  
-  // Stop timer
-  end = clock();
-  
-  // Debug output
-  if (debug)
-  {
-    printf("Time: %lu\n",end-start);
-    fflush(stdout);
-  }
-  
-  return iters;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- * solve_SOR
- *
- * Inverts the thickness-weighted Poisson equation iteratively using successive over-relaxation.
- *
- * The Nx x Ny matrix pi is used as a prior for the iterative procedure, and is modified to
- * store the updated value of pi when this function returns.
- *
- * The Nx x Ny matrix pi_rhs stores the right-hand side of the Poisson equation.
- *
- * Returns the number of iterations required for convergence, or 'maxiters' if convergence was
- * not achieved within the stipulated number of iterations.
- *
- */
-uint solve_SOR (real ** pi, real ** pi_rhs, real rp)
-{
-  // To record iterations
-  int iters = 0;
-  
-  // To calculate convergence
-  real maxdiff;
-  real temp;
-  real diff = 0;
-  
-  // For timing
-  clock_t start;
-  clock_t end;
-  
-  // Looping variables
-  int i,j,k,im1,ip1,jp1,jm1;
-  
-  // Initialize timer
-  start = clock();
-  
-  // Perform SOR iteration
-  maxdiff = pi_tol + 1;
-  iters = 0;
-  while ((maxdiff > pi_tol) && (iters < maxiters))
-  {
-    maxdiff = 0;
-    
-#pragma parallel
-    
-    for (i = 0; i < Nx; i ++)
-    {
-      im1 = im1_vec[i];
-      ip1 = ip1_vec[i];
-      
-      for (j = 0; j < Ny; j ++)
-      {
-        jm1 = jm1_vec[j];
-        jp1 = jp1_vec[j];
-        
-        // Store current grid value of pi
-        *pi_prev = pi[i][j];
-        
-        // N.B. This code is periodic in y, but the operator Os is set such that the wall BCs are included
-        pi[i][j] = (1-rp)*pi[i][j]
-                 + rp * _Osum[i][j]
-                      *  ( Os[i][jp1]*pi[i][jp1] + Os[i][j]*pi[i][jm1] + Ow[ip1][j]*pi[ip1][j] + Ow[i][j]*pi[im1][j] - pi_rhs[i][j] );
-        
-        // Calculate the absolute difference between iterations
-        diff = fabs(pi[i][j]-*pi_prev);
-        maxdiff = fmax(diff,maxdiff);
-      }
-    }
-    
-    iters ++;
-  }
-  
-  // Stop timer
-  end = clock();
-  if (debug)
-  {
-    printf("Time: %lu\n",end-start);
-    printf("Iterations: %u\n",iters);
-    printf("Error: %e\n",maxdiff);
-    fflush(stdout);
-  }
-  
-  return iters;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
 /**
  *
  * calcFaceThickness
@@ -1285,7 +425,6 @@ void calcFaceThickness (real ** hh, real ** h_west, real ** h_south, mybool use_
   if ((thicknessScheme == THICKNESS_AL81) || (!vel_flag))
   {
     
-#pragma parallel
     
     // Compute thickness on cell faces
     for (i = imin; i < imax; i ++)
@@ -1308,7 +447,6 @@ void calcFaceThickness (real ** hh, real ** h_west, real ** h_south, mybool use_
   if (thicknessScheme == THICKNESS_HK83)
   {
     
-#pragma parallel
     
     // Compute thickness on cell faces
     for (i = imin; i < imax; i ++)
@@ -1361,7 +499,6 @@ void calcFaceThickness (real ** hh, real ** h_west, real ** h_south, mybool use_
   if (vel_flag && (thicknessScheme == THICKNESS_UP3))
   {
     
-#pragma parallel
     
     // Compute second derivative for third-order upwinding
     for (i = imin; i < imax; i ++)
@@ -1379,7 +516,6 @@ void calcFaceThickness (real ** hh, real ** h_west, real ** h_south, mybool use_
       }
     }
     
-#pragma parallel
     
     // Compute thickness on cell faces
     for (i = imin; i < imax; i ++)
@@ -1406,7 +542,6 @@ void calcFaceThickness (real ** hh, real ** h_west, real ** h_south, mybool use_
   if (vel_flag && (thicknessScheme == THICKNESS_KT00))
   {
     
-#pragma parallel
   
     // Determine limited slopes at cell centres
     for (i = imin; i < imax; i ++)
@@ -1428,7 +563,6 @@ void calcFaceThickness (real ** hh, real ** h_west, real ** h_south, mybool use_
       }
     }
     
-#pragma parallel
     
     // Interpolate hh to cell faces
     for (i = imin; i < imax; i ++)
@@ -1477,340 +611,6 @@ void calcFaceThickness (real ** hh, real ** h_west, real ** h_south, mybool use_
 
 
 /**
- * surfPressure
- *
- * Calculates the surface pressure from the intermediate velocity. Or, equivalently,
- * computes a barotropic correction to the velocity field that renders it non-divergent
- * in a depth-integral sense. This correction is then added to the 3D velocity field,
- * i.e. uu and vv are modified by this function.
- *
- * The derivatives are approximated using central differences, and MultiGrid or Successive
- * Over-Relaxation is used to solve the Poisson equation
- *   div (H grad pi) = div (Hu)
- * where H is the ocean depth and u is the depth-averaged velocity. The boundary 
- * condition on lateral boundaries is 
- *   grad pi.n = u.n = 0.
- * See Rempfer (2006) for further details on the boundary condition.
- *
- * The matrix pi is used as a prior for the iterative procedure, and is modified to
- * store the updated value of pi when this function returns.
- *
- * The flag update_diags tells this function whether to update momentum and energy
- * diagnostics once the surface pressure has been calculated.
- *
- * Returns the number of iterations required to achieve convergence,
- * or 0 if the method did not converge.
- *
- */
-uint surfPressure (real *** uu, real *** vv, real *** hh, real dt, real ** pi, real rp, bool update_diags)
-{
-  // Volume fluxes at cell faces
-  real hu = 0;
-  real hv = 0;
-  real rhs_u = 0;
-  real rhs_v = 0;
-  
-  // Number of iterations required to converge
-  uint iters = 0;
-  
-  // Looping variables
-  int i,j,k,im1,imin,ip1,jp1,jm1,jmin;
-  
-  // Set right-hand side of Poisson equation
-  memset(*pi_rhs,0,Nx*Ny*sizeof(real));
-  
-  for (k = 0; k < Nlay; k ++)
-  {
-
-#pragma parallel
-    
-    // Calculate layer thickness on cell faces
-    // N.B. Here we use h_west and h_south, which are Nlay x Nx+2*Ng x Ny+2*Ng matrices,
-    // as Nlay x Nx x Ny matrices.
-    // NOTE: If using advection schemes in which the face thickensses depend on the velocities,
-    // following the pressure solve the velocities will be adjusted, which may in turn modify
-    // the layer thicknesses when they are next calculated. Thus, the resulting volume fluxes
-    // may not be perfectly nondivergent. Deviations in the water column thickness will be
-    // corrected using correctThickness after each time step.
-    calcFaceThickness(hh[k],h_west[k],h_south[k],false,Nx,Ny,uu[k],vv[k]);
-    
-    // Add contribution due to x-volume fluxes
-    imin = useWallEW ? 1 : 0;
-    for (i = imin; i < Nx; i ++)
-    {
-      im1 = (i+Nx-1) % Nx;
-      
-      for (j = 0; j < Ny; j ++)
-      {
-        hu = uu[k][i][j]*h_west[k][i][j];
-        pi_rhs[i][j] -= hu / (dx*dt);
-        pi_rhs[im1][j] += hu / (dx*dt);
-      }
-    }
-
-#pragma parallel
-    
-    // Add contribution due to y-volume fluxes
-    jmin = useWallNS ? 1 : 0;
-    for (j = jmin; j < Ny; j ++)
-    {
-      jm1 = (j+Ny-1) % Ny;
-      for (i = 0; i < Nx; i ++)
-      {
-        hv = vv[k][i][j]*h_south[k][i][j];
-        pi_rhs[i][j] -= hv / (dy*dt);
-        pi_rhs[i][jm1] += hv / (dy*dt);
-      }
-    }
-    
-  }
-
-  // Solve for surface pressure using selected scheme
-  if (use_MG)
-  {
-    iters = solve_MG(pi,pi_rhs);
-  }
-  else
-  {
-    iters = solve_SOR(pi,pi_rhs,rp);
-  }
-  
-  // Correct u-velocity
-  for (k = 0; k < Nlay; k ++)
-  {
-    
-#pragma parallel
-    
-    imin = useWallEW ? 1 : 0;
-    for (i = imin; i < Nx; i ++)
-    {
-      im1 = (i+Nx-1) % Nx;
-      for (j = 0; j < Ny; j ++)
-      {
-        rhs_u = - dt*(pi[i][j]-pi[im1][j])/dx;
-        uu[k][i][j] += rhs_u;
-        if (update_diags && (dt_avg_hu > 0))
-        {
-          hu_tend_gradM[k][i][j] += h_west[k][i][j] * avg_fac_hu * rhs_u;
-        }
-        if (update_diags && (dt_avg_e > 0))
-        {
-          e_tend_gradM[k][i][j] += rhs_u*h_west[k][i][j]*uu[k][i][j]*avg_fac_e;
-        }
-      }
-    }
-    
-  }
-
-  // Correct v-velocity
-  for (k = 0; k < Nlay; k ++)
-  {
-    
-#pragma parallel
-    
-    jmin = useWallNS ? 1 : 0;
-    for (j = jmin; j < Ny; j ++)
-    {
-      jm1 = (j+Ny-1) % Ny;
-      for (i = 0; i < Nx; i ++)
-      {
-        rhs_v = - dt*(pi[i][j]-pi[i][jm1])/dy;
-        vv[k][i][j] += rhs_v;
-        if (update_diags && (dt_avg_hv > 0))
-        {
-          hv_tend_gradM[k][i][j] += h_south[k][i][j] * avg_fac_hv * rhs_v;
-        }
-        if (update_diags && (dt_avg_e > 0))
-        {
-          e_tend_gradM[k][i][j] += rhs_v*h_south[k][i][j]*vv[k][i][j]*avg_fac_e;
-        }
-      }
-    }
-    
-  }
-  
-  // Additional energy budget terms
-  if (update_diags && (dt_avg_e > 0))
-  {
-    for (k = 0; k < Nlay; k ++)
-    {
-      for (j = 0; j < Ny; j ++)
-      {
-        jm1 = (j+Ny-1) % Ny;
-        
-        for (i = 0; i < Nx; i ++)
-        {
-          im1 = (i+Nx-1) % Nx;
-          
-          // Barotropic contribution to pressure flux
-          e_flux_uP[k][i][j] += h_west[k][i][j] * uu[k][i][j] * 0.5*(pi[i][j]+pi[im1][j]) * avg_fac_e*dt;
-          e_flux_vP[k][i][j] += h_south[k][i][j] * vv[k][i][j]  * 0.5*(pi[i][j]+pi[i][jm1]) * avg_fac_e*dt;
-        }
-      }
-    }
-  }
-  
-  // If we haven't converged in the required number
-  // of iterations, return 0 to indicate this
-  if (iters == maxiters)
-  {
-    return 0;
-  }
-  else
-  {
-    return iters;
-  }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-/**
- *
- * optimizeSOR
- *
- * Optimizes the relaxation parameter to be used for the surface pressure calculation. Takes the current 
- * iteration's variables (uu,vv,hh) and buffers (uu_buf,vv_buf) for temporary storage, along with a guess
- * for the surface pressure (pi). Note that uu_buf, vv_buf and pi will be modified within this function.
- * The optimized rp is returned.
- *
- */
-real optimizeSOR (real *** uu, real *** vv, real *** hh, real ** pi, real *** uu_buf, real *** vv_buf, real ** pi_buf, real dt, real rp)
-{
-  real rp_min = 0;
-  real rp_max = 0;
-  real rp_acc = 0;
-  uint rp_iters = 0;
-  uint n_rp = 0;
-  uint iters_rp = 0;
-  uint n_miniters_rp = 0;
-  real miniters_rp = 0;
-  real drp = 0;
-  real rp_opt_range = rp_opt_max - rp_opt_min;
-
-  if (debug)
-  {
-    printf("BEGINNING OPTIMIZATION\n");
-    fflush(stdout);
-  }
-  
-  // This is a crude iteration scheme to optimize the relaxation parameter. We
-  // repeatedly call surfPressure over a range of values of rp, successively
-  // narrowing our search window until we converge.
-  rp_min = rp_opt_min;
-  rp_max = rp_opt_max;
-  rp_acc = rp_max - rp_min;
-  while (rp_acc > rp_acc_max)
-  {
-    // rp increment
-    drp = (rp_max-rp_min)/N_rp;
-    
-    // Iterate through values of rp to find the one that yields the fewest iterations
-    // required for convergence
-    miniters_rp = maxiters;
-    for (n_rp = 1; n_rp < N_rp; n_rp ++)
-    {
-      // Relaxation parameter to test
-      rp = rp_min + n_rp*drp;
-      
-      // Configure the pressure solve input identically for each iteration
-      memcpy(*(*uu_buf),*(*uu),N*sizeof(real));
-      memcpy(*(*vv_buf),*(*vv),N*sizeof(real));
-      memcpy(*pi_buf,*pi,Nx*Ny*sizeof(real));
-      
-      if (debug)
-      {
-        printf("Trying rp=%lf\n",rp);
-        fflush(stdout);
-      }
-      
-      // Determine how many iterations were required to solve for the pressure
-      iters_rp = surfPressure(uu_buf,vv_buf,hh,dt,pi_buf,rp,false);
-      if (iters_rp == 0)
-      {
-        iters_rp = maxiters;
-      }
-      
-      // Find the value of rp that yields the minimum number of iterations
-      if (iters_rp < miniters_rp)
-      {
-        miniters_rp = iters_rp;
-        n_miniters_rp = n_rp;
-      }
-    }
-    
-    // Define new rp range over which to search, centered on the minimum of rp
-    rp_max = rp_min + (n_miniters_rp+1)*drp;
-    rp_min = rp_min + (n_miniters_rp-1)*drp;
-    
-    // Calculate accuracy with which rp is currently constrained
-    rp_acc = 0.5*(rp_max-rp_min);
-    
-    // This code adapts the user-specified range of rp to search beyond the limits if the optimal rp
-    // lies at the edges of the range
-    if ((rp_acc <= rp_acc_max))
-    {
-      
-      // Optimal rp is at the bottom of the range
-      if ((rp_min-rp_opt_min <= rp_acc_max) && (rp_opt_min-1.0 > rp_acc_max))
-      {
-        if (debug)
-        {
-          printf("DECREASING rp_opt_min\n");
-          fflush(stdout);
-        }
-        
-        rp_opt_min -= fmin(rp_opt_range/2,rp_opt_min-1.0);
-        rp_opt_max = rp_opt_min + rp_opt_range;
-        rp_min = rp_opt_min;
-        rp_max = rp_opt_max;
-        rp_acc = rp_opt_range;
-      }
-      
-      // Optimal rp is at the top of the range
-      else if ((rp_opt_max-rp_max <= rp_acc_max) && (2.0-rp_opt_max > rp_acc_max))
-      {
-        if (debug)
-        {
-          printf("INCREASING rp_opt_max\n");
-          fflush(stdout);
-        }
-        
-        rp_opt_max += fmin(rp_opt_range/2,2.0-rp_opt_max);
-        rp_opt_min = rp_opt_max - rp_opt_range;
-        rp_min = rp_opt_min;
-        rp_max = rp_opt_max;
-        rp_acc = rp_opt_range;
-      }
-      
-    }
-    
-  }
-  
-  // Finally, determine the optimal rp
-  rp = 0.5*(rp_min+rp_max);
-  
-  if (debug)
-  {
-    printf("OPTIMIZATION COMPLETE: new rp=%lf\n",rp);
-    fflush(stdout);
-  }
-  
-  return rp;
-}
-
-
-
-
-/**
  *
  * setGhostPoints
  *
@@ -1829,7 +629,6 @@ void setGhostPoints (real *** uu, real *** vv, real *** hh, real *** bb,
   for (k = 0; k < Nlay; k ++)
   {
     
-#pragma parallel
     
     // Copy to work arrays with room for ghost points
     for (i = 0; i < Nx; i ++)
@@ -1846,7 +645,6 @@ void setGhostPoints (real *** uu, real *** vv, real *** hh, real *** bb,
       }
     }
     
-#pragma parallel
     
     // Extend grid in the y-direction.
     // Loop over just i-indices within the computational domain.
@@ -1907,7 +705,6 @@ void setGhostPoints (real *** uu, real *** vv, real *** hh, real *** bb,
       
     }
     
-#pragma parallel
     
     // Extend grid in the x-direction
     // Loop over ALL j-points, including ghost points.
@@ -1983,7 +780,6 @@ void calcEta (real ** hhb, real *** hh, real *** eta, uint Nlay, uint Nx, uint N
   
   for (k = Nlay; k >= 0; k --)
   {
-#pragma parallel
     for (i = 0; i < Nx; i ++)
     {
       for (j = 0; j < Ny; j ++)
@@ -2117,7 +913,6 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
   if (hsml > 0)
   {
 
-#pragma parallel
 
     // Loop over all points in the domain, including ghost points
     for (i = 1; i < Nx+2*Ng-1; i ++)
@@ -2167,7 +962,6 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
   if (hbbl > 0)
   {
       
-#pragma parallel
 
     // Loop over all points in the domain, including ghost points
     for (i = 1; i < Nx+2*Ng-1; i ++)
@@ -2224,7 +1018,6 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
   if (CdSurf > 0)
   {
     
-#pragma parallel
 
     // Determine squared "surface" velocities on u/v points
     for (i = 0; i < Nx+2*Ng; i ++)
@@ -2280,7 +1073,6 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
   if (CdBot > 0)
   {
     
-#pragma parallel
     
     // Determine squared "bottom" velocities on u/v points
     for (i = 0; i < Nx+2*Ng; i ++)
@@ -2544,7 +1336,6 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
   for (k = 0; k < Nlay; k ++)
   {
     
-#pragma parallel
     
     // Generate q, u* and v*
     for (i = 1; i < Nx+2*Ng-1; i ++)
@@ -2575,7 +1366,6 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
       }
     }
     
-#pragma parallel
     
     // Generate PV coefficients and potential function
     for (i = 1; i < Nx+2*Ng-1; i ++)
@@ -2838,7 +1628,6 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
     if (useTracer)
     {
       
-#pragma parallel
       
       for (i = 1; i < Nx+2*Ng-1; i ++)
       {
@@ -2885,7 +1674,6 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
       if (tracerScheme == TRACER_UP3)
       {
         
-#pragma parallel
         
         // Compute second derivative for third-order upwinding
         for (i = 1; i < Nx+2*Ng-1; i ++)
@@ -2903,7 +1691,6 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
         }
         
-#pragma parallel
         
         // Compute total tracer on cell faces
         for (i = 1; i < Nx+2*Ng-1; i ++)
@@ -2931,7 +1718,6 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
       if (tracerScheme == TRACER_KT00)
       {
         
-#pragma parallel
         
         // Determine limited slopes at cell centres
         for (i = 1; i < Nx+2*Ng-1; i ++)
@@ -2953,7 +1739,6 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
           }
         }
         
-#pragma parallel
         
         // Interpolate hb to cell faces
         for (i = 1; i < Nx+2*Ng-1; i ++)
@@ -2985,7 +1770,6 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
       
     } // end if (useTracer)
 
-#pragma parallel
     
     // Calculate time derivatives
     for (i = 0; i < Nx; i ++)
@@ -3956,7 +2740,6 @@ void calcEZ (const int t, real *** uu, real *** vv, real *** hh, real *** bb, re
   for (k = 0; k < Nlay; k ++)
   {
     
-#pragma parallel
     
     // NOTE: We only set vorticities on an Nx x Ny grid, though the PV grid may be
     // Nx x Ny+1 or Nx+1 x Ny or Nx+1 x Ny+1 depending on the periodicity of the domain.
@@ -4002,7 +2785,6 @@ void calcEZ (const int t, real *** uu, real *** vv, real *** hh, real *** bb, re
   for (k = 0; k < Nlay; k ++)
   {
     
-#pragma parallel
     
     // In calculating the total energy we always assume periodicity in both directions. KE is defined on each h-point,
     // and has contributions from u^2_west, u^2_east, v^2_north and v^2_south on that grid cell. If a wall is present
@@ -4863,7 +3645,6 @@ mybool writeUMomentumAverages (uint n, char * outdir)
   uint i,j,k;
   char outfile[MAX_PARAMETER_FILENAME_LENGTH];
   
-#pragma parallel
   
   // Divide by averaging step length to compute averages
   for (i = 0; i < Nx; i ++)
@@ -4932,7 +3713,6 @@ mybool writeUMomentumAverages (uint n, char * outdir)
     if (!writeOutputFile(outfile,hu_tend_diaVisc[k],Nx,Ny)) return false;
   }
   
-#pragma parallel
   
   // Reset averaging buffers
   for (i = 0; i < Nx; i ++)
@@ -4986,7 +3766,6 @@ mybool writeVMomentumAverages (uint n, char * outdir)
   uint i,j,k;
   char outfile[MAX_PARAMETER_FILENAME_LENGTH];
   
-#pragma parallel
   
   // Divide by averaging step length to compute averages
   for (i = 0; i < Nx; i ++)
@@ -5055,7 +3834,6 @@ mybool writeVMomentumAverages (uint n, char * outdir)
     if (!writeOutputFile(outfile,hv_tend_diaVisc[k],Nx,Ny)) return false;
   }
   
-#pragma parallel
   
   // Reset averaging buffers
   for (i = 0; i < Nx; i ++)
@@ -5110,7 +3888,6 @@ mybool writeThicknessAverages (uint n, char * outdir)
   uint i,j,k;
   char outfile[MAX_PARAMETER_FILENAME_LENGTH];
   
-#pragma parallel
   
   // Divide by averaging step length to compute averages
   for (i = 0; i < Nx; i ++)
@@ -5134,7 +3911,6 @@ mybool writeThicknessAverages (uint n, char * outdir)
     if (!writeOutputFile(outfile,h_tend_relax[k],Nx,Ny)) return false;
   }
   
-#pragma parallel
   
   // Reset averaging buffers
   for (i = 0; i < Nx; i ++)
@@ -5171,7 +3947,6 @@ mybool writeEnergyAverages (uint n, char * outdir)
   uint i,j,k;
   char outfile[MAX_PARAMETER_FILENAME_LENGTH];
   
-#pragma parallel
   
   // Divide by averaging step length to compute averages
   for (i = 0; i < Nx; i ++)
@@ -5255,7 +4030,6 @@ mybool writeEnergyAverages (uint n, char * outdir)
     if (!writeOutputFile(outfile,e_tend_diaVisc[k],Nx,Ny)) return false;
   }
   
-#pragma parallel
   
   // Reset averaging buffers
   for (i = 0; i < Nx; i ++)
@@ -5314,7 +4088,6 @@ mybool writeTracerAverages (uint n, char * outdir)
   uint i,j,k;
   char outfile[MAX_PARAMETER_FILENAME_LENGTH];
   
-#pragma parallel
   
   // Divide by averaging step length to compute averages
   for (i = 0; i < Nx; i ++)
@@ -5350,7 +4123,6 @@ mybool writeTracerAverages (uint n, char * outdir)
     if (!writeOutputFile(outfile,hb_tend_relax[k],Nx,Ny)) return false;
   }
   
-#pragma parallel
   
   // Reset averaging buffers
   for (i = 0; i < Nx; i ++)
@@ -6087,14 +4859,6 @@ int main (int argc, char ** argv)
     return 0;
   }
   
-  // MultiGrid only implemented for power-of-2 grid sizes
-  if (useRL && use_MG && (!ispow2u(Nx) || !ispow2u(Ny)))
-  {
-    fprintf(stderr,"ERROR: To use MultiGrid methods, grid dimensions must be powers of 2.\n");
-    printUsage();
-    return 0;
-  }
-  
   /// Random forcing autocorrelation time scale must be positive
   if (useRandomForcing && (RF_tau<=0))
   {
@@ -6257,27 +5021,6 @@ int main (int argc, char ** argv)
     n_avg_b = round(tmin/dt_avg_b) + 1;
   }
 
-  //  Multigrid-specific parameters
-  if (useRL && use_MG)
-  {
-    // Number of powers of 2 constituting each grid dimension
-    Npx = log2u(Nx);
-    Npy = log2u(Ny);
-    
-    // Ngrids -> Number of grids in the multigrid scheme
-    // F_len -> Length of vector that will constitute the very smallest grid
-    if (Npx > Npy)
-    {
-      Ngrids = Npy + 1;
-      F_len = pow2u(Npx-Npy);
-    }
-    else
-    {
-      Ngrids = Npx + 1;
-      F_len = pow2u(Npy-Npx);
-    }
-  }
-  
   // Viscosity flags
   useA2 = (A2const > 0) || (A2smag > 0);
   useA4 = (A4const > 0) || (A4smag > 0);
@@ -6593,15 +5336,6 @@ int main (int argc, char ** argv)
   MATALLOC(Hc,Nx,Ny);
   MATALLOC(Hw,Nx,Ny);
   MATALLOC(Hs,Nx,Ny);
-  MATALLOC(Ow,Nx,Ny);
-  MATALLOC(Os,Nx,Ny);
-  MATALLOC(Osum,Nx,Ny);
-  MATALLOC(_Osum,Nx,Ny);
-  VECALLOC(pi_prev,Ny);
-  VECALLOC(im1_vec,Nx);
-  VECALLOC(ip1_vec,Nx);
-  VECALLOC(jm1_vec,Ny);
-  VECALLOC(jp1_vec,Ny);
   
   // Random forcing
   if (useRandomForcing)
@@ -6672,35 +5406,6 @@ int main (int argc, char ** argv)
     MATALLOC3(gprime,Nlay,Nx+2*Ng,Ny+2*Ng);
   }
   
-  // For MultiGrid solver
-  VECALLOC(F_MG,F_len+1);
-  mg_grids = (data_MG *) malloc(Ngrids*sizeof(data_MG));
-  for (m = Ngrids-1; m >=0; m --)
-  {
-    mg_grids[m].Nx = m==Ngrids-1 ? Nx : mg_grids[m+1].Nx/2;
-    mg_grids[m].Ny = m==Ngrids-1 ? Ny : mg_grids[m+1].Ny/2;
-    mg_grids[m].dx = Lx/mg_grids[m].Nx;
-    mg_grids[m].dy = Ly/mg_grids[m].Ny;
-    MATALLOC(mg_grids[m].pi,mg_grids[m].Nx,mg_grids[m].Ny);     // These two memory allocations actually won't be used for m=Ngrids-1 because
-    MATALLOC(mg_grids[m].pi_rhs,mg_grids[m].Nx,mg_grids[m].Ny); // we'll instead assign these pointers to the code's main pi/pi_rhs matrices
-    MATALLOC(mg_grids[m].pi_temp,mg_grids[m].Nx,mg_grids[m].Ny);
-    MATALLOC(mg_grids[m].Hc,mg_grids[m].Nx,mg_grids[m].Ny);
-    MATALLOC(mg_grids[m].Hw,mg_grids[m].Nx,mg_grids[m].Ny);
-    MATALLOC(mg_grids[m].Hs,mg_grids[m].Nx,mg_grids[m].Ny);
-    MATALLOC(mg_grids[m].Ow,mg_grids[m].Nx,mg_grids[m].Ny);
-    MATALLOC(mg_grids[m].Os,mg_grids[m].Nx,mg_grids[m].Ny);
-    MATALLOC(mg_grids[m].Osum,mg_grids[m].Nx,mg_grids[m].Ny);
-    MATALLOC(mg_grids[m]._Osum,mg_grids[m].Nx,mg_grids[m].Ny);
-    MATALLOC(mg_grids[m].wmm,mg_grids[m].Nx,mg_grids[m].Ny);
-    MATALLOC(mg_grids[m].wpm,mg_grids[m].Nx,mg_grids[m].Ny);
-    MATALLOC(mg_grids[m].wmp,mg_grids[m].Nx,mg_grids[m].Ny);
-    MATALLOC(mg_grids[m].wpp,mg_grids[m].Nx,mg_grids[m].Ny);
-    VECALLOC(mg_grids[m].im1_vec,mg_grids[m].Nx);
-    VECALLOC(mg_grids[m].ip1_vec,mg_grids[m].Nx);
-    VECALLOC(mg_grids[m].jm1_vec,mg_grids[m].Ny);
-    VECALLOC(mg_grids[m].jp1_vec,mg_grids[m].Ny);
-  }
-  
   /////////////////////////////////
   ///// END MEMORY ALLOCATION /////
   /////////////////////////////////
@@ -6712,7 +5417,6 @@ int main (int argc, char ** argv)
   ///// BEGIN PARAMETER DEFAULTS  /////
   /////////////////////////////////////
   
-#pragma parallel
   
   // Horizontal rotation components
   for (i = 0; i < Nx; i ++)
@@ -6724,7 +5428,6 @@ int main (int argc, char ** argv)
     }
   }
   
-#pragma parallel
   
   // Vertical rotation component
   for (i = 0; i < Nx+1; i ++)
@@ -6735,7 +5438,6 @@ int main (int argc, char ** argv)
     }
   }
 
-#pragma parallel
   
   // Default surface topography elevation
   for (i = 0; i < Nx; i ++)
@@ -6746,7 +5448,6 @@ int main (int argc, char ** argv)
     }
   }
   
-#pragma parallel
   
   // Default bottom topography elevation
   for (i = 0; i < Nx; i ++)
@@ -6767,7 +5468,6 @@ int main (int argc, char ** argv)
   for (k = 0; k < Nlay; k ++)
   {
     
-#pragma parallel
     
     for (i = 0; i < Nx; i ++)
     {
@@ -6819,7 +5519,6 @@ int main (int argc, char ** argv)
       for (k = 0; k < Nlay+1; k ++)
       {
       
-#pragma parallel
       
         for (i = 0; i < Nx; i ++)
         {
@@ -6837,7 +5536,6 @@ int main (int argc, char ** argv)
   if (useRelax)
   {
     
-#pragma parallel
 
     for (i = 0; i < Nx; i ++)
     {
@@ -6862,7 +5560,6 @@ int main (int argc, char ** argv)
     }
   }
   
-#pragma parallel
   
   // Default lid velocity
   for (i = 0; i < Nx; i ++)
@@ -6874,7 +5571,6 @@ int main (int argc, char ** argv)
     }
   }
   
-#pragma parallel
   
   // Default diapycnal diffusivity and surface tracer flux
   if (useDiaDiff)
@@ -6908,7 +5604,6 @@ int main (int argc, char ** argv)
     }
   }
   
-#pragma parallel
   
   // Default barotropic forcing
   for (i = 0; i < Nx; i ++)
@@ -6926,7 +5621,6 @@ int main (int argc, char ** argv)
      for (k = 0; k < Nlay; k ++)
      {
 
-#pragma parallel
        
        for (i = 0; i < Nx; i ++)
        {
@@ -7051,7 +5745,6 @@ int main (int argc, char ** argv)
   if (useRL)
   {
 
-#pragma parallel
     
     // Check water column thickness is > 0 if in rigid lid mode
     for (i = 0; i < Nx; i ++)
@@ -7133,7 +5826,6 @@ int main (int argc, char ** argv)
   ///// BEGIN WORK ARRAYS /////
   /////////////////////////////
 
-#pragma parallel
   
   // Copy to work arrays, leaving room for ghost points
   for (i = 0; i < Nx; i ++)
@@ -7169,7 +5861,6 @@ int main (int argc, char ** argv)
     Omega_z_w[Nx+Ng][Ng+Ny] = Omega_z[Nx][Ny];
   }
 
-#pragma parallel
   
   // Set y-ghost points
   if (useWallNS)
@@ -7201,7 +5892,6 @@ int main (int argc, char ** argv)
     }
   }
   
-#pragma parallel
   
   // Set x-ghost points
   if (useWallEW)
@@ -7243,7 +5933,6 @@ int main (int argc, char ** argv)
   for (k = 0; k < Nlay; k ++)
   {
     
-#pragma parallel
     
     for (i = 0; i < Nx+2*Ng; i ++)
     {
@@ -7275,7 +5964,6 @@ int main (int argc, char ** argv)
     }
   }
   
-#pragma parallel
   
   // Compute water column thickness on cell centers
   for (i = 0; i < Nx; i ++)
@@ -7289,69 +5977,14 @@ int main (int argc, char ** argv)
   // Compute water column thickness on cell faces
   calcFaceThickness(Hc,Hw,Hs,false,Nx,Ny,NULL,NULL);
 
-#pragma parallel
-  
-  // Define north-south operators for the pressure solve
-  for (i = 0; i < Nx; i ++)
+  if (useRL)
   {
-    for (j = 0; j < Ny; j ++)
+    if (!initPressureSolvers(Nx,Ny,Lx,Ly,dx,dy,Hc,Hw,Hs,use_MG,use_fullMG,useWallEW,useWallNS,pi_tol,maxiters,omega_WJ,debug))
     {
-      Os[i][j] = Hs[i][j] / dysq;
-    }
-    
-    // No north-south periodic operator if there is a wall
-    if (useWallNS)
-    {
-      Os[i][0] = 0;
+      return 0;
     }
   }
   
-#pragma parallel
-  
-  // Define east-west operators for the pressure solve
-  for (j = 0; j < Ny; j ++)
-  {
-    for (i = 0; i < Nx; i ++)
-    {
-      Ow[i][j] = Hw[i][j] / dxsq;
-    }
-    
-    // No east-west periodic operator if there is a wall
-    if (useWallEW)
-    {
-      Ow[0][j] = 0;
-    }
-  }
-  
-#pragma parallel
-  
-  // Define sum of operators around each cell for computational efficiency
-  for (i = 0; i < Nx; i ++)
-  {
-    ip1 = (i + Nx + 1) % Nx;
-    
-    for (j = 0; j < Ny; j ++)
-    {
-      jp1 = (j + Ny + 1) % Ny;
-      
-      Osum[i][j] = Ow[i][j] + Ow[ip1][j] + Os[i][j] + Os[i][jp1];
-      _Osum[i][j] = 1 / Osum[i][j];
-    }
-  }
-  
-  // Indexing for adjacent gridpoints - to be used in pressure solve for efficiency
-  for (i = 0; i < Nx; i ++)
-  {
-    im1_vec[i] = (i+Nx-1) % Nx;
-    ip1_vec[i] = (i+Nx+1) % Nx;
-  }
-  for (j = 0; j < Ny; j ++)
-  {
-    jm1_vec[j] = (j+Ny-1) % Ny;
-    jp1_vec[j] = (j+Ny+1) % Ny;
-  }
-  
-#pragma parallel
   
   // Extend uLid and vLid to include ghost points
   for (i = 0; i < Nx; i ++)
@@ -7363,7 +5996,6 @@ int main (int argc, char ** argv)
     }
   }
   
-#pragma parallel
   
   // Extend uLid and vLid in the y-direction.
   // Loop over just i-indices within the computational domain.
@@ -7404,7 +6036,6 @@ int main (int argc, char ** argv)
     
   }
   
-#pragma parallel
   
   // Extend uLid and vLid in the x-direction
   // Loop over ALL j-points, including ghost points.
@@ -7451,7 +6082,6 @@ int main (int argc, char ** argv)
     geff[k] = geff[k-1] + gg[k];
   }
   
-#pragma parallel
     
   // Initialize diapycnal velocity to zero - it will be set in tderiv
   for (i = 0; i < Nx; i ++)
@@ -7469,165 +6099,6 @@ int main (int argc, char ** argv)
   ///// END WORK ARRAYS /////
   ///////////////////////////
   
-  
-  
-  ///////////////////////////////////////////
-  ///// BEGIN MULTIGRID SOLVER MATRICES /////
-  ///////////////////////////////////////////
-
-  if (useRL && use_MG)
-  {
-    // Loop down through grids (toward coarser resolution) and set up solver at each step
-    for (m = Ngrids-1; m >=0; m --)
-    {
-      // Calculate water column thickness on this grid
-      if (m == Ngrids-1)
-      {
-        memcpy(*(mg_grids[m].Hc),*Hc,Nx*Ny*sizeof(real));
-      }
-      else
-      {
-        restrict_MG(mg_grids[m+1].Nx,mg_grids[m+1].Ny,mg_grids[m+1].Hc,mg_grids[m].Hc);
-      }
-      
-      // Compute water column thickness on cell faces
-      calcFaceThickness(mg_grids[m].Hc,mg_grids[m].Hw,mg_grids[m].Hs,false,mg_grids[m].Nx,mg_grids[m].Ny,NULL,NULL);
-      
-#pragma parallel
-      
-      // Define north-south operators for the pressure solve
-      for (i = 0; i < mg_grids[m].Nx; i ++)
-      {
-        for (j = 0; j < mg_grids[m].Ny; j ++)
-        {
-          mg_grids[m].Os[i][j] = mg_grids[m].Hs[i][j] / SQUARE(mg_grids[m].dy);
-        }
-        
-        // No north-south periodic operator if there is a wall
-        if (useWallNS)
-        {
-          mg_grids[m].Os[i][0] = 0;
-        }
-      }
-      
-#pragma parallel
-      
-      // Define east-west operators for the pressure solve
-      for (j = 0; j < mg_grids[m].Ny; j ++)
-      {
-        for (i = 0; i < mg_grids[m].Nx; i ++)
-        {
-          mg_grids[m].Ow[i][j] = mg_grids[m].Hw[i][j] / SQUARE(mg_grids[m].dx);
-        }
-        
-        // No east-west periodic operator if there is a wall
-        if (useWallEW)
-        {
-          mg_grids[m].Ow[0][j] = 0;
-        }
-      }
-      
-#pragma parallel
-      
-      // Define sum of operators around each cell for computational efficiency
-      for (i = 0; i < mg_grids[m].Nx; i ++)
-      {
-        ip1 = (i + mg_grids[m].Nx + 1) % mg_grids[m].Nx;
-        
-        for (j = 0; j < mg_grids[m].Ny; j ++)
-        {
-          jp1 = (j + mg_grids[m].Ny + 1) % mg_grids[m].Ny;
-          
-          mg_grids[m].Osum[i][j] = mg_grids[m].Ow[i][j] + mg_grids[m].Ow[ip1][j] + mg_grids[m].Os[i][j] + mg_grids[m].Os[i][jp1];
-          mg_grids[m]._Osum[i][j] = 1 / mg_grids[m].Osum[i][j];
-        }
-      }
-      
-      // Indexing for adjacent gridpoints - to be used in pressure solve for efficiency
-      for (i = 0; i < mg_grids[m].Nx; i ++)
-      {
-        mg_grids[m].im1_vec[i] = (i+mg_grids[m].Nx-1) % mg_grids[m].Nx;
-        mg_grids[m].ip1_vec[i] = (i+mg_grids[m].Nx+1) % mg_grids[m].Nx;
-      }
-      for (j = 0; j < mg_grids[m].Ny; j ++)
-      {
-        mg_grids[m].jm1_vec[j] = (j+mg_grids[m].Ny-1) % mg_grids[m].Ny;
-        mg_grids[m].jp1_vec[j] = (j+mg_grids[m].Ny+1) % mg_grids[m].Ny;
-      }
-    
-#pragma parallel
-      
-      // Define weights for interpolation to finer grids
-      for (i = 0; i < mg_grids[m].Nx; i ++)
-      {
-        for (j = 0; j < mg_grids[m].Ny; j ++)
-        {
-          mg_grids[m].wmm[i][j] = ((i%2==1) ? 0.75 : 0.25) * ((j%2==1) ? 0.75 : 0.25);
-          mg_grids[m].wmp[i][j] = ((i%2==1) ? 0.75 : 0.25) * ((j%2==1) ? 0.25 : 0.75);
-          mg_grids[m].wpm[i][j] = ((i%2==1) ? 0.25 : 0.75) * ((j%2==1) ? 0.75 : 0.25);
-          mg_grids[m].wpp[i][j] = ((i%2==1) ? 0.25 : 0.75) * ((j%2==1) ? 0.25 : 0.75);
-        }
-      }
-      
-      if (useWallNS)
-      {
-        for (i = 0; i < mg_grids[m].Nx; i ++)
-        {
-          mg_grids[m].wmm[i][0] = 0;
-          mg_grids[m].wpm[i][0] = 0;
-          mg_grids[m].wmp[i][0] = ((i%2==1) ? 0.75 : 0.25);
-          mg_grids[m].wpp[i][0] = ((i%2==1) ? 0.25 : 0.75);
-          mg_grids[m].wmp[i][mg_grids[m].Ny-1] = 0;
-          mg_grids[m].wpp[i][mg_grids[m].Ny-1] = 0;
-          mg_grids[m].wmm[i][mg_grids[m].Ny-1] = ((i%2==1) ? 0.75 : 0.25);
-          mg_grids[m].wpm[i][mg_grids[m].Ny-1] = ((i%2==1) ? 0.25 : 0.75);
-        }
-      }
-      
-      if (useWallEW)
-      {
-        for (j = 0; j < mg_grids[m].Ny; j ++)
-        {
-          mg_grids[m].wmm[0][j] = 0;
-          mg_grids[m].wmp[0][j] = 0;
-          mg_grids[m].wpm[0][j] = ((j%2==1) ? 0.75 : 0.25);
-          mg_grids[m].wpp[0][j] = ((j%2==1) ? 0.25 : 0.75);
-          mg_grids[m].wpm[mg_grids[m].Nx-1][j] = 0;
-          mg_grids[m].wpp[mg_grids[m].Nx-1][j] = 0;
-          mg_grids[m].wmm[mg_grids[m].Nx-1][j] = ((j%2==1) ? 0.75 : 0.25);
-          mg_grids[m].wmp[mg_grids[m].Nx-1][j] = ((j%2==1) ? 0.25 : 0.75);
-        }
-      }
-      
-      if (useWallNS && useWallEW)
-      {
-        mg_grids[m].wmm[0][0] = 0;
-        mg_grids[m].wmp[0][0] = 0;
-        mg_grids[m].wpm[0][0] = 0;
-        mg_grids[m].wpp[0][0] = 1;
-        
-        mg_grids[m].wmm[0][mg_grids[m].Ny-1] = 0;
-        mg_grids[m].wmp[0][mg_grids[m].Ny-1] = 0;
-        mg_grids[m].wpm[0][mg_grids[m].Ny-1] = 1;
-        mg_grids[m].wpp[0][mg_grids[m].Ny-1] = 0;
-        
-        mg_grids[m].wmm[mg_grids[m].Nx-1][0] = 0;
-        mg_grids[m].wmp[mg_grids[m].Nx-1][0] = 1;
-        mg_grids[m].wpm[mg_grids[m].Nx-1][0] = 0;
-        mg_grids[m].wpp[mg_grids[m].Nx-1][0] = 0;
-        
-        mg_grids[m].wmm[mg_grids[m].Nx-1][mg_grids[m].Ny-1] = 1;
-        mg_grids[m].wmp[mg_grids[m].Nx-1][mg_grids[m].Ny-1] = 0;
-        mg_grids[m].wpm[mg_grids[m].Nx-1][mg_grids[m].Ny-1] = 0;
-        mg_grids[m].wpp[mg_grids[m].Nx-1][mg_grids[m].Ny-1] = 0;
-      }
-    }
-  }
-  
-  /////////////////////////////////////////
-  ///// END MULTIGRID SOLVER MATRICES /////
-  /////////////////////////////////////////
-
   
   
   /////////////////////////////////////////////
@@ -7675,7 +6146,6 @@ int main (int argc, char ** argv)
     for (k = 0; k < Nlay; k ++)
     {
         
-#pragma parallel
         
       // Compute normalization coefficient for spectral mask in this layer
       RF_mask_norm = 0;
@@ -7689,7 +6159,6 @@ int main (int argc, char ** argv)
       RF_mask_norm = sqrt(0.5*RF_mask_norm); // Factor of 0.5 accounts for the fact that only half of the forcing
                                             // "energy" is preserved when we transform back to real space
       
-#pragma parallel
         
       // Evolve rotational and divergent components in spectral space
       for (i = 0; i < Nx; i ++)
@@ -7780,7 +6249,6 @@ int main (int argc, char ** argv)
   // If we are calculating averaged output then initialize averaging arrays to zero
   if (dt_avg > 0)
   {
-#pragma parallel
     for (i = 0; i < Nx; i ++)
     {
       for (j = 0; j < Ny; j ++)
@@ -7809,7 +6277,6 @@ int main (int argc, char ** argv)
   // If we are calculating averaged u-momentum output then initialize averaging arrays to zero
   if (dt_avg_hu > 0)
   {
-#pragma parallel
     for (i = 0; i < Nx; i ++)
     {
       for (j = 0; j < Ny; j ++)
@@ -7841,7 +6308,6 @@ int main (int argc, char ** argv)
   // If we are calculating averaged u-momentum output then initialize averaging arrays to zero
   if (dt_avg_hv > 0)
   {
-#pragma parallel
     for (i = 0; i < Nx; i ++)
     {
       for (j = 0; j < Ny; j ++)
@@ -7872,7 +6338,6 @@ int main (int argc, char ** argv)
   // If we are calculating averaged thickness equation output then initialize averaging arrays to zero
   if (dt_avg_h > 0)
   {
-#pragma parallel
     for (i = 0; i < Nx; i ++)
     {
       for (j = 0; j < Ny; j ++)
@@ -7889,7 +6354,6 @@ int main (int argc, char ** argv)
   // If we are calculating averaged energy budget diagnostics then initialize averaging arrays to zero
   if (dt_avg_e > 0)
   {
-#pragma parallel
     for (i = 0; i < Nx; i ++)
     {
       for (j = 0; j < Ny; j ++)
@@ -7926,7 +6390,6 @@ int main (int argc, char ** argv)
   // If we are calculating averaged tracer budget diagnostics then initialize averaging arrays to zero
   if (dt_avg_b > 0)
   {
-#pragma parallel
     for (i = 0; i < Nx; i ++)
     {
       for (j = 0; j < Ny; j ++)
@@ -7978,7 +6441,6 @@ int main (int argc, char ** argv)
       for (k = 0; k < Nlay; k ++)
       {
         
-#pragma parallel
         
         // Apply mask in real space
         for (i = 0; i < Nx; i ++)
@@ -7991,7 +6453,6 @@ int main (int argc, char ** argv)
           }
         }
         
-#pragma parallel
         
         // Calculate tendencies for u and v
         for (i = 0; i < Nx; i ++)
@@ -8121,7 +6582,6 @@ int main (int argc, char ** argv)
         if ((k == 0) || (!useBarotropicRF))
         {
           
-#pragma parallel
           
           // Evolve rotational and divergent components in spectral space
           for (i = 0; i < Nx; i ++)
@@ -8163,7 +6623,6 @@ int main (int argc, char ** argv)
         else
         {
 
-#pragma parallel
           
           // If we're using barotropic random forcing then we just copy the
           // rotational and divergent components in real space from the uppermost layer
@@ -8237,7 +6696,6 @@ int main (int argc, char ** argv)
       // an Nlay x (Nx+2*Ng) x (Ny+2*Ng) matrix
       calcEta(hhb,hh_out,eta_w,Nlay,Nx,Ny);
 
-#pragma parallel
       
       // Add to averages
       for (i = 0; i < Nx; i ++)
@@ -8312,7 +6770,6 @@ int main (int argc, char ** argv)
       if (t >= t_next_avg)
       {
         
-#pragma parallel
         
         // Divide by averaging step length to compute averages
         for (i = 0; i < Nx; i ++)
@@ -8351,7 +6808,6 @@ int main (int argc, char ** argv)
           return 0;
         }
         
-#pragma parallel
         
         // Reset averaging buffers
         for (i = 0; i < Nx; i ++)

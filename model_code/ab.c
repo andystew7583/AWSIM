@@ -59,7 +59,6 @@ void ab1 (  real *                  t,
     // Calculate the derivatives of x at t
     (*f)(*t, x, dxdt, numvars);
     
-#pragma parallel
     
     // Increment the dependent variable
     for (i = 0; i < numvars; i ++)
@@ -132,7 +131,6 @@ void ab2 (  real *                  t,
     // Calculate dx/dt = f(x,t)
     (*f)(*t, x, dxdt, numvars);
     
-#pragma parallel
 
     // Calculate the result
     for (i = 0; i < numvars; i ++)
@@ -214,7 +212,6 @@ void ab3 (  real *                  t,
     // Calculate dx/dt = f(x,t)
     (*f)(*t, x, dxdt, numvars);
     
-#pragma parallel
 
     // Calculate the result
     for (i = 0; i < numvars; i ++)
@@ -303,7 +300,6 @@ void ab4 (  real *                  t,
     // Calculate dx/dt = f(x,t)
     (*f)(*t, x, dxdt, numvars);
     
-#pragma parallel
     
     // Calculate the result
     for (i = 0; i < numvars; i ++)
