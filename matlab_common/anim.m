@@ -219,7 +219,9 @@ function M = anim (local_home_dir,run_name,var,layer,tmin,tmax)
         pcolor(XX_h/1000,YY_h/1000,pi);
         hold on
         [C,h] = contour(XX_h/1000,YY_h/1000,hhb,[-4000:500:-1000 -750],'EdgeColor','k');        
-        caxis([min(min(pi)) max(max(pi))]);
+        if (max(pi(:))>min(pi(:)))
+            caxis([min(min(pi)) max(max(pi))]);
+        end
         hold off;
         shading interp;
         colorbar;

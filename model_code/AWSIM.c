@@ -983,7 +983,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             heff_west = fmin(eta_west[k][i][j],z_bbl_west) - fmin(eta_west[k+1][i][j],z_bbl_west);
             heff_west = fmax(heff_west-hmin_bot,0);
             hFbot_west[k][i][j] =  heff_west / hbbl;
-            hF_west_sum += hFsurf_west[k][i][j];
+            hF_west_sum += hFbot_west[k][i][j];
           }
           else
           {
@@ -995,7 +995,7 @@ void tderiv (const real t, const real * data, real * dt_data, const uint numvars
             heff_south = fmin(eta_south[k][i][j],z_bbl_south) - fmin(eta_south[k+1][i][j],z_bbl_south);
             heff_south = fmax(heff_south-hmin_bot,0);
             hFbot_south[k][i][j] = heff_south / hbbl;
-            hF_south_sum += hFsurf_south[k][i][j];
+            hF_south_sum += hFbot_south[k][i][j];
           }
           else
           {
