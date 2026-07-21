@@ -6688,7 +6688,7 @@ int main (int argc, char ** argv)
       // Need layer thicknesses on cell faces to calculate products
       for (k = 0; k < Nlay; k ++)
       {
-        calcFaceThickness(hh_out[k],h_west[k],h_south[k],false,Nx,Ny,uu[k],vv[k]);
+        calcFaceThickness(hh_out[k],h_west[k],h_south[k],false,Nx,Ny,uu_out[k],vv_out[k]);
       }
       
       // Need layer interface heights for pressure calculation
